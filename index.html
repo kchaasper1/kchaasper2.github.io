@@ -46,3 +46,111 @@
   #fireBtn{display:none;margin-top:8px;margin-left:8px;}
 </style>
 </head>
+<body>
+
+<h1>🏠 House Game</h1>
+<div id="startScreen">
+  <p>Move between rooms, play the mini-game in each. Others online will appear as they walk around.</p>
+  <input id="nameInput" placeholder="Your name" maxlength="16">
+  <button id="startBtn">Enter the house</button>
+  <div id="status"></div>
+</div>
+
+
+
+<div id="gameWrap">
+  <canvas id="canvas" width="720" height="460"></canvas>
+  
+  <div id="infoRow">
+  <div id="hint">Arrow keys / WASD to move. Space to shoot.</div>
+  <div id="stats">
+    <div id="moneyRow">
+      <div id="moneyDisplay">💰 $5</div>
+      <div id="bankDisplay">🏦 $0</div>
+  </div>
+    <div id="expenseDisplay">Expenses: $0/min</div>
+  </div>
+</div>
+<div id="toast"></div>
+  
+  <button id="playCta">Play mini-game (E)</button>
+  <button id="fireBtn">🔫 Fire</button>
+</div>
+
+
+
+<div class="modal" id="modal">
+  <div class="modal-inner">
+    <h2 id="modalTitle"></h2>
+    <div id="miniArea"></div>
+    <div id="miniScore"></div>
+    <button id="closeModal">Close</button>
+  </div>
+</div>
+
+<div class="modal" id="bankModal">
+  <div class="modal-inner">
+    <h2>🏦 Bank</h2>
+    <p id="bankBalances"></p>
+    <div class="bank-row">
+      <input id="depAmt" type="number" min="1" step="1" inputmode="numeric" placeholder="Amount to deposit">
+      <button id="depositBtn">Deposit</button>
+    </div>
+    <div class="bank-row">
+      <input id="wdAmt" type="number" min="1" step="1" inputmode="numeric" placeholder="Amount to withdraw">
+      <button id="withdrawBtn">Withdraw</button>
+    </div>
+    <div class="bank-row">
+      <button id="depositAllBtn">Deposit everything</button>
+      <button id="withdrawAllBtn">Withdraw everything</button>
+    </div>
+    <p id="bankMsg"></p>
+    <button id="closeBank">Leave bank</button>
+  </div>
+</div>
+
+
+
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
+<script>
+/* ====== 1) PASTE YOUR FIREBASE CONFIG HERE ====== */
+const firebaseConfig = {
+  apiKey: "AIzaSyBlC2luCyQGEok4heizoj7zR9h4mbdMGGQ",
+  authDomain: "test-cef34.firebaseapp.com",
+  databaseURL: "https://test-cef34-default-rtdb.firebaseio.com",
+  projectId: "test-cef34"
+};
+/* ================================================= */
+
+
+
+let db = null, playersRef = null, myId = null, myName = "", myColor = "#e0824f";
+let pedsRef=null, pedPosRef=null, goonsRef=null;
+let playersLoaded=false, otherGoons={};
+let firebaseOk = false;
+try {
+  if (firebaseConfig.apiKey !== "YOUR_API_KEY") {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.database();
+    playersRef = db.ref("housegame/players");
+    pedsRef=db.ref("housegame/peds");
+    pedPosRef=db.ref("housegame/pedpos");
+    goonsRef=db.ref("housegame/goons");
+    firebaseOk = true;
+  }
+} catch(e){ console.error("Firebase init failed", e); }
+
+
+
+const startScreen=document.getElementById('startScreen');
+const statusEl=document.getElementById('status');
+const gameWrap=document.getElementById('gameWrap');
+const canvas=document.getElementById('canvas');
+const ctx=canvas.getContext('2d');
+const playCta=document.getElementById('playCta');
+
+statusEl.textContent = firebaseOk
+  ? "Multiplayer connected."
+  : "Running solo — add your Firebase config in the file to enable multiplayer.";
+
