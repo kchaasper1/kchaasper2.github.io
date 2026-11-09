@@ -3,111 +3,59 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>House Game</title>
+<title>Deep Dig</title>
 <style>
-  :root{ --bg:#20242b; --panel:#2b3038; --text:#eee; --muted:#9aa1ac; --accent:#e0824f; --accent2:#4fae8f; --border:#3c414b; }
-  *{box-sizing:border-box;}
-  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,sans-serif;display:flex;flex-direction:column;align-items:center;padding:16px;}
-  h1{margin:4px 0;font-size:1.4rem;}
-  #startScreen{text-align:center;max-width:360px;margin-top:60px;}
-  #startScreen input{padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--panel);color:var(--text);width:100%;margin:10px 0;font-size:1rem;}
-  #startScreen button, .modal button, #gameUI button{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:1rem;cursor:pointer;}
-  #status{color:var(--muted);font-size:.85rem;margin-top:8px;}
-  #gameWrap{display:none;flex-direction:column;align-items:center;}
-  #canvas{background:#111;border-radius:10px;touch-action:none;max-width:100%;}
-  #playCta{display:none;margin-top:8px;}
-  .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:10;}
-  .modal.active{display:flex;}
-  .modal-inner{background:var(--panel);border-radius:14px;padding:20px;width:320px;max-width:92vw;text-align:center;}
-  .modal-inner h2{margin-top:0;}
-  #miniArea{position:relative;height:260px;background:#111;border-radius:8px;overflow:hidden;margin:12px 0;}
-  .falling,.pop{position:absolute;font-size:1.6rem;cursor:pointer;user-select:none;}
-  .hole{position:absolute;width:60px;height:60px;background:#222;border-radius:50%;}
-  #reflexBtn{width:120px;height:120px;border-radius:50%;border:none;font-size:1rem;margin:20px auto;display:block;cursor:pointer;}
-  
-  #miniScore{color:var(--muted);}
-
-  #hint{color:var(--muted);font-size:.85rem;margin-top:8px;text-align:center;}
-  #toast{min-height:18px;color:var(--accent);font-size:.85rem;margin-top:4px;}
-
-  #infoRow{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:8px 16px;width:100%;max-width:720px;margin-top:8px;}
-  #infoRow #hint{margin-top:0;text-align:left;flex:1 1 280px;}
-  #stats{text-align:right;margin-left:auto;}
-  #moneyDisplay{font-weight:600;}
-  #expenseDisplay{color:#e66;font-size:.85rem;}
-
-  #moneyRow{display:flex;gap:14px;justify-content:flex-end;}
-  #bankDisplay{font-weight:600;color:#7cc;}
-  .bank-row{display:flex;gap:8px;margin:8px 0;}
-  .bank-row input{flex:1;min-width:0;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:1rem;}
-  #bankMsg{color:var(--muted);min-height:20px;margin:8px 0;font-size:.9rem;}
-  
-  button{touch-action:manipulation;}
-  #fireBtn{display:none;margin-top:8px;margin-left:8px;}
+  :root{
+    --bg:#1b1a22; --panel:#25232e; --panel2:#2e2b3a; --line:#403c50; --text:#ece8f2; --muted:#9a94ab; --accent:#f2b44a;}
+ *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--text);font:15px/1.4 "Trebuchet MS","Segoe UI",sans-serif;display:flex;flex-direction:column}
+  header{padding:10px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+  header h1{font:700 20px/1 Georgia,"Times New Roman",serif;margin:0;letter-spacing:.5px}
+  header span{color:var(--muted);font-size:13px}
+  main{flex:1;min-height:0;display:flex}
+  #stage{flex:1;position:relative;min-width:0}
+  canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+  #mineBtn{position:absolute;right:14px;bottom:14px;padding:16px 22px;border-radius:999px;border:2px solid var(--accent);background:rgba(27,26,34,.85);color:var(--accent);font:700 16px inherit;user-select:none;touch-action:none}
+  #mineBtn:active{background:var(--accent);color:#1b1a22}
+  #hint{position:absolute;left:12px;bottom:12px;color:var(--muted);font-size:13px;background:rgba(27,26,34,.75);padding:6px 10px;border-radius:8px;pointer-events:none}
+  aside{width:340px;max-width:45vw;background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+  aside h2{margin:0;padding:12px 14px;font:700 17px Georgia,serif;border-bottom:1px solid var(--line);display:flex;justify-content:space-between}
+  #pack{overflow:auto;padding:10px;display:flex;flex-direction:column;gap:10px}
+  .empty{color:var(--muted);padding:12px 4px}
+  .card{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px}
+  .top{display:flex;align-items:center;gap:10px}
+  .gem{width:26px;height:26px;flex:none;clip-path:polygon(50% 0,100% 38%,80% 100%,20% 100%,0 38%)}
+  .name{font-weight:700;flex:1}
+  .count{font:700 18px Georgia,serif;color:var(--accent)}
+  .props{margin-top:8px;display:grid;grid-template-columns:auto 1fr auto;gap:3px 8px;font-size:12.5px;align-items:center}
+  .props .l{color:var(--muted)}
+  .bar{height:5px;background:var(--bg);border-radius:3px;overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--accent)}
+  .card.flash{animation:flash .5s}
+  @keyframes flash{from{border-color:var(--accent)}to{border-color:var(--line)}}
+  @media (max-width:700px){
+    main{flex-direction:column}
+    aside{width:100%;max-width:none;height:42%;border-left:0;border-top:1px solid var(--line)}
+    #hint{display:none}
+  }
+  @media (prefers-reduced-motion:reduce){.card.flash{animation:none}}
 </style>
 </head>
 <body>
 
-<h1>🏠 House Game</h1>
-<div id="startScreen">
-  <p>Move between rooms, play the mini-game in each. Others online will appear as they walk around.</p>
-  <input id="nameInput" placeholder="Your name" maxlength="16">
-  <button id="startBtn">Enter the house</button>
-  <div id="status"></div>
-</div>
-
-
-
-<div id="gameWrap">
-  <canvas id="canvas" width="720" height="460"></canvas>
-  
-  <div id="infoRow">
-  <div id="hint">Arrow keys / WASD to move. Space to shoot.</div>
-  <div id="stats">
-    <div id="moneyRow">
-      <div id="moneyDisplay">💰 $5</div>
-      <div id="bankDisplay">🏦 $0</div>
+<header><h1>Deep Dig</h1><span id="seedInfo"></span></header>
+<main>
+  <div id="stage">
+    <canvas id="c"></canvas>
+    <div id="hint">Move: WASD / arrows (or drag). Hold Space or E next to a rock to mine.</div>
+    <button id="mineBtn" type="button">Mine</button>
   </div>
-    <div id="expenseDisplay">Expenses: $0/min</div>
-  </div>
-</div>
-<div id="toast"></div>
-  
-  <button id="playCta">Play mini-game (E)</button>
-  <button id="fireBtn">🔫 Fire</button>
-</div>
-
-
-
-<div class="modal" id="modal">
-  <div class="modal-inner">
-    <h2 id="modalTitle"></h2>
-    <div id="miniArea"></div>
-    <div id="miniScore"></div>
-    <button id="closeModal">Close</button>
-  </div>
-</div>
-
-<div class="modal" id="bankModal">
-  <div class="modal-inner">
-    <h2>🏦 Bank</h2>
-    <p id="bankBalances"></p>
-    <div class="bank-row">
-      <input id="depAmt" type="number" min="1" step="1" inputmode="numeric" placeholder="Amount to deposit">
-      <button id="depositBtn">Deposit</button>
-    </div>
-    <div class="bank-row">
-      <input id="wdAmt" type="number" min="1" step="1" inputmode="numeric" placeholder="Amount to withdraw">
-      <button id="withdrawBtn">Withdraw</button>
-    </div>
-    <div class="bank-row">
-      <button id="depositAllBtn">Deposit everything</button>
-      <button id="withdrawAllBtn">Withdraw everything</button>
-    </div>
-    <p id="bankMsg"></p>
-    <button id="closeBank">Leave bank</button>
-  </div>
-</div>
+  <aside>
+    <h2>Backpack <span id="total">0 items</span></h2>
+    <div id="pack"></div>
+  </aside>
+</main>
 
 
 
@@ -141,16 +89,246 @@ try {
   }
 } catch(e){ console.error("Firebase init failed", e); }
 
-
-
-const startScreen=document.getElementById('startScreen');
-const statusEl=document.getElementById('status');
-const gameWrap=document.getElementById('gameWrap');
-const canvas=document.getElementById('canvas');
-const ctx=canvas.getContext('2d');
-const playCta=document.getElementById('playCta');
-
 statusEl.textContent = firebaseOk
   ? "Multiplayer connected."
   : "Running solo — add your Firebase config in the file to enable multiplayer.";
 
+
+
+  <script>
+/* ---------- Config ---------- */
+// Fixed set of properties. Each mineral gets a random value inside [min,max].
+const PROPS = [
+  {key:"hardness", label:"Hardness",        min:0, max:10,  dec:1},
+  {key:"density",  label:"Density (g/cm³)", min:1, max:20,  dec:2},
+  {key:"luster",   label:"Luster",          min:0, max:10,  dec:1},
+  {key:"rarity",   label:"Rarity",          min:0, max:100, dec:0},
+  {key:"value",    label:"Value ($)",       min:1, max:500, dec:0},
+];
+const MINERAL_COUNT = 8;
+const WORLD = 2400;
+const NODE_COUNT = 130;
+const MINE_RANGE = 60;
+
+/* ---------- Mineral registry (created once per session) ---------- */
+const rand = (a,b)=>a+Math.random()*(b-a);
+const SYL = ["ka","lor","zin","ox","bar","mer","ti","vul","quar","nid","ol","sa","gra","phe","ru","dem","an","thu","cal","bro"];
+const END = ["ite","ium","ine","ox","ase","yl"];
+function makeName(used){
+  let n;
+  do{
+    n = SYL[Math.floor(Math.random()*SYL.length)] + SYL[Math.floor(Math.random()*SYL.length)] + END[Math.floor(Math.random()*END.length)];
+    n = n[0].toUpperCase()+n.slice(1);
+  }while(used.has(n));
+  used.add(n);
+  return n;
+}
+const minerals = (()=>{
+  const used = new Set(), list = [];
+  for(let i=0;i<MINERAL_COUNT;i++){
+    const m = {id:i, name:makeName(used), hue:Math.floor(rand(0,360)), props:{}};
+    PROPS.forEach(p=>{
+      const v = rand(p.min,p.max);
+      m.props[p.key] = +v.toFixed(p.dec);
+    });
+    list.push(m);
+  }
+  return list;
+})();
+const byId = id => minerals[id];
+const color = (m,l=55)=>`hsl(${m.hue} 70% ${l}%)`;
+
+/* Rarer minerals spawn less often. */
+function pickMineral(){
+  const w = minerals.map(m=>101-m.props.rarity);
+  let r = Math.random()*w.reduce((a,b)=>a+b,0);
+  for(let i=0;i<minerals.length;i++){ r-=w[i]; if(r<=0) return minerals[i]; }
+  return minerals[0];
+}
+
+
+  
+/* ---------- World ---------- */
+const player = {x:WORLD/2, y:WORLD/2, r:14, speed:230};
+const inventory = {};   // mineralId -> count
+let nodes = [];
+
+
+  
+function newNode(){
+  const m = pickMineral();
+  return {x:rand(60,WORLD-60), y:rand(60,WORLD-60), m, amount:Math.floor(rand(2,5)), seed:Math.random()*6.28, size:rand(16,24)};
+}
+for(let i=0;i<NODE_COUNT;i++) nodes.push(newNode());
+
+
+  
+/* ---------- Input ---------- */
+const keys = {};
+let mining = false;
+addEventListener("keydown",e=>{
+  const k = e.key.toLowerCase();
+  if(["arrowup","arrowdown","arrowleft","arrowright"," "].includes(k) || k===" ") e.preventDefault();
+  if(k===" "||k==="e") mining = true; else keys[k]=true;
+});
+addEventListener("keyup",e=>{
+  const k = e.key.toLowerCase();
+  if(k===" "||k==="e") mining = false; else keys[k]=false;
+});
+addEventListener("blur",()=>{mining=false;for(const k in keys)keys[k]=false;});
+
+
+  
+const mineBtn = document.getElementById("mineBtn");
+mineBtn.addEventListener("pointerdown",e=>{mining=true;mineBtn.setPointerCapture(e.pointerId)});
+mineBtn.addEventListener("pointerup",()=>mining=false);
+mineBtn.addEventListener("pointercancel",()=>mining=false);
+
+
+  
+const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
+let W=0,H=0,dpr=1, drag=null;
+function resize(){
+  dpr = window.devicePixelRatio||1;
+  const r = canvas.getBoundingClientRect();
+  W=r.width; H=r.height;
+  canvas.width=W*dpr; canvas.height=H*dpr;
+}
+addEventListener("resize",resize);
+canvas.addEventListener("pointerdown",e=>{drag={x:e.offsetX,y:e.offsetY};canvas.setPointerCapture(e.pointerId)});
+canvas.addEventListener("pointermove",e=>{if(drag){drag.x=e.offsetX;drag.y=e.offsetY}});
+canvas.addEventListener("pointerup",()=>drag=null);
+canvas.addEventListener("pointercancel",()=>drag=null);
+
+
+  
+/* ---------- Mining ---------- */
+let progress = 0, target = null;
+function nearestNode(){
+  let best=null,bd=MINE_RANGE;
+  for(const n of nodes){
+    const d = Math.hypot(n.x-player.x,n.y-player.y)-n.size;
+    if(d<bd){bd=d;best=n}
+  }
+  return best;
+}
+// Harder minerals take longer to mine.
+const mineTime = m => 0.4 + m.props.hardness*0.18;
+
+
+  
+function update(dt){
+  let dx=0,dy=0;
+  if(keys.a||keys.arrowleft)dx--; if(keys.d||keys.arrowright)dx++;
+  if(keys.w||keys.arrowup)dy--;   if(keys.s||keys.arrowdown)dy++;
+  if(drag){
+    const vx=drag.x-W/2, vy=drag.y-H/2, len=Math.hypot(vx,vy);
+    if(len>20){dx=vx/len;dy=vy/len}
+  }
+  const l=Math.hypot(dx,dy)||1;
+  player.x=Math.min(WORLD-player.r,Math.max(player.r,player.x+dx/l*player.speed*dt*(dx||dy?1:0)));
+  player.y=Math.min(WORLD-player.r,Math.max(player.r,player.y+dy/l*player.speed*dt*(dx||dy?1:0)));
+
+  const n = nearestNode();
+  if(mining && n && !(dx||dy)){
+    if(n!==target){target=n;progress=0}
+    progress += dt/mineTime(n.m);
+    if(progress>=1){
+      progress=0;
+      inventory[n.m.id]=(inventory[n.m.id]||0)+1;
+      n.amount--;
+      if(n.amount<=0){ nodes[nodes.indexOf(n)] = newNode(); target=null; }
+      renderPack(n.m.id);
+    }
+  }else{ progress=0; target=null; }
+}
+
+
+  
+/* ---------- Drawing ---------- */
+function draw(t){
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle="#2a2733"; ctx.fillRect(0,0,W,H);
+  const cx=Math.min(Math.max(player.x,W/2),WORLD-W/2), cy=Math.min(Math.max(player.y,H/2),WORLD-H/2);
+  const ox = WORLD<W ? (W-WORLD)/2 : W/2-cx, oy = WORLD<H ? (H-WORLD)/2 : H/2-cy;
+  ctx.save(); ctx.translate(ox,oy);
+
+  ctx.fillStyle="#35313f"; ctx.fillRect(0,0,WORLD,WORLD);
+  ctx.strokeStyle="rgba(255,255,255,.05)"; ctx.lineWidth=1;
+  ctx.beginPath();
+  for(let g=0;g<=WORLD;g+=80){ctx.moveTo(g,0);ctx.lineTo(g,WORLD);ctx.moveTo(0,g);ctx.lineTo(WORLD,g);}
+  ctx.stroke();
+  ctx.strokeStyle="#6b6580"; ctx.lineWidth=4; ctx.strokeRect(0,0,WORLD,WORLD);
+
+  const near = nearestNode();
+  for(const n of nodes){
+    if(n.x<-ox-40||n.x>-ox+W+40||n.y<-oy-40||n.y>-oy+H+40) continue;
+    const s=n.size;
+    ctx.fillStyle="rgba(0,0,0,.3)"; ctx.beginPath(); ctx.ellipse(n.x,n.y+s*.8,s,s*.4,0,0,7); ctx.fill();
+    // grey rock with mineral crystals
+    ctx.fillStyle="#5a566a"; ctx.beginPath();
+    for(let i=0;i<7;i++){const a=i/7*6.283+n.seed, r=s*(0.85+0.2*Math.sin(n.seed*3+i*2));ctx.lineTo(n.x+Math.cos(a)*r,n.y+Math.sin(a)*r*.85)}
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle=color(n.m);
+    for(let i=0;i<4;i++){
+      const a=n.seed+i*1.6, px=n.x+Math.cos(a)*s*.45, py=n.y+Math.sin(a)*s*.4;
+      ctx.beginPath(); ctx.moveTo(px,py-6); ctx.lineTo(px+4.5,py+4); ctx.lineTo(px-4.5,py+4); ctx.closePath(); ctx.fill();
+    }
+    if(n===near){ctx.strokeStyle="#f2b44a";ctx.lineWidth=2;ctx.setLineDash([5,4]);ctx.beginPath();ctx.arc(n.x,n.y,s+8,0,7);ctx.stroke();ctx.setLineDash([])}
+  }
+
+  // player
+  ctx.fillStyle="rgba(0,0,0,.3)"; ctx.beginPath(); ctx.ellipse(player.x,player.y+12,14,6,0,0,7); ctx.fill();
+  ctx.fillStyle="#f2b44a"; ctx.beginPath(); ctx.arc(player.x,player.y,player.r,0,7); ctx.fill();
+  ctx.fillStyle="#1b1a22"; ctx.fillRect(player.x-9,player.y-5,18,5); // helmet visor
+  ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(player.x,player.y-13,3,0,7); ctx.fill(); // lamp
+
+  // mining progress + target label
+  if(near){
+    ctx.font="600 13px 'Trebuchet MS',sans-serif"; ctx.textAlign="center";
+    ctx.fillStyle="#ece8f2"; ctx.fillText(`${near.m.name} (${near.amount} left)`,near.x,near.y-near.size-16);
+    if(progress>0){
+      ctx.fillStyle="#1b1a22"; ctx.fillRect(near.x-24,near.y-near.size-12,48,6);
+      ctx.fillStyle="#f2b44a"; ctx.fillRect(near.x-24,near.y-near.size-12,48*progress,6);
+    }
+  }
+  ctx.restore();
+}
+
+
+  
+/* ---------- Backpack UI ---------- */
+const packEl = document.getElementById("pack"), totalEl = document.getElementById("total");
+function renderPack(flashId){
+  const ids = Object.keys(inventory).map(Number).sort((a,b)=>byId(b).props.value-byId(a).props.value);
+  const total = ids.reduce((s,i)=>s+inventory[i],0);
+  totalEl.textContent = `${total} ${total===1?"item":"items"}`;
+  if(!ids.length){ packEl.innerHTML='<div class="empty">Empty. Walk up to a rock and hold Space or E to mine it.</div>'; return; }
+  packEl.innerHTML = ids.map(id=>{
+    const m=byId(id);
+    const rows = PROPS.map(p=>{
+      const pct = (m.props[p.key]-p.min)/(p.max-p.min)*100;
+      return `<span class="l">${p.label}</span><span class="bar"><i style="width:${pct}%"></i></span><span>${m.props[p.key].toFixed(p.dec)}</span>`;
+    }).join("");
+    return `<div class="card${id===flashId?" flash":""}">
+      <div class="top"><div class="gem" style="background:${color(m)}"></div><div class="name">${m.name}</div><div class="count">×${inventory[id]}</div></div>
+      <div class="props">${rows}</div></div>`;
+  }).join("");
+}
+renderPack();
+
+
+  
+/* ---------- Loop ---------- */
+resize();
+document.getElementById("seedInfo").textContent = `${MINERAL_COUNT} minerals discovered in this world`;
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(0.05,(now-last)/1000); last=now;
+  update(dt); draw(now);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
