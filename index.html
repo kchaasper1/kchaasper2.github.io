@@ -73,28 +73,6 @@ const firebaseConfig = {
 
 
 
-let db = null, playersRef = null, myId = null, myName = "", myColor = "#e0824f";
-let pedsRef=null, pedPosRef=null, goonsRef=null;
-let playersLoaded=false, otherGoons={};
-let firebaseOk = false;
-try {
-  if (firebaseConfig.apiKey !== "YOUR_API_KEY") {
-    firebase.initializeApp(firebaseConfig);
-    db = firebase.database();
-    playersRef = db.ref("housegame/players");
-    pedsRef=db.ref("housegame/peds");
-    pedPosRef=db.ref("housegame/pedpos");
-    goonsRef=db.ref("housegame/goons");
-    firebaseOk = true;
-  }
-} catch(e){ console.error("Firebase init failed", e); }
-
-statusEl.textContent = firebaseOk
-  ? "Multiplayer connected."
-  : "Running solo — add your Firebase config in the file to enable multiplayer.";
-
-
-
   <script>
 /* ---------- Config ---------- */
 // Fixed set of properties. Each mineral gets a random value inside [min,max].
