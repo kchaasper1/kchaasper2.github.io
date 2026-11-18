@@ -1,24 +1,28 @@
 <!-- 1) Main menu with three modes: Campaign, World Battle vs AI, World Battle vs Players (AI optionally added) -->
 <!-- 2) Sign-in so progress is remembered: start as an anonymous guest, upgrade to Google later without losing progress -->
-<!-- 3) Campaign with hand-made maps and missions that unlock things -->
+<!-- 3) Campaign with hand-made maps and missions that unlock things; whether unit levels persist is undecided -->
 <!-- 4) World Battle vs AI with procedurally generated maps -->
-<!-- 5) World Battle vs Players, turn-based, with procedurally generated maps and deterministic combat resolution -->
+<!-- 5) World Battle vs Players, turn-based, with procedurally generated maps and deterministic resolution; an AI takes over after a player disconnects for some time -->
 <!-- 6) Starting setup (may change later): one army containing a swordsman with a shield -->
-<!-- 7) Player starts at a point on the map, which contains things to do (initially just enemies) -->
-<!-- 8) Free movement on the overworld map -->
-<!-- 9) Contact with an enemy opens a grid-based battle map, where the player controls their units’ movement -->
-<!-- 10) Armies have 4 facing directions, chosen by the player at the end of their turn, which determine how units face in battle -->
-<!-- 11) Attacking from the side or rear gives the attacker an advantage, bigger from the rea -->
-<!-- 12) Defenders fight back at reduced power (weaker against rear attacks than side attacks); the penalty applies only to that attack-and-counter exchange, and the defender doesn’t permanently turn, so it can’t be rear-attacked twice before moving -->
-<!-- 13) Face-dependent defenses (like shields) don’t work during the defender’s counterattack -->
-<!-- 14) Levels belong to unit types, so leveling swordsmen levels all swordsmen -->
-<!-- 15) Every new World Battle vs Players match gives players their unlockables, but all unit types start at level 1 -->
-<!-- 16) Whether levels persist in the campaign is undecided -->
-<!-- 17) Units can be stacked (King’s Bounty style), with merge and split actions, and armies can also hold separate units of the same type -->
-<!-- 18) A single battle formation for now, the “battle-square”: only units with an unblocked line of sight attack (for example, 10 of 100 swordsmen) -->
-<!-- 19) Each unit type has a deterministic damage range, and the dice roll also grants XP, with higher rolls granting more -->
-<!-- 20) Authority limits the total number of units (any number of armies allowed); undecided whether the limit is global or per unit type -->
-<!-- 21) Gold to hire troops and pay their salaries, possibly with loans -->
+<!-- 7) Player starts at a point on the map, which contains things to do (initially enemies, plus villages) -->
+<!-- 8) Free movement on the overworld, with facing chosen at the end of a turn ******* -->
+<!-- 9) Contact with an enemy opens a simple grid battle (flat, few squares, no height) where the player controls their units’ movement -->
+<!-- 10) Flanking or rear-attacking on the overworld gives the attacker the first strike, with the defender’s units starting on the grid turned sideways or away -->
+<!-- 11) Battle sequence: the attacker strikes, then the defender turns if needed and counters, with a penalty that is larger for rear hits than side hits -->
+<!-- 12) Face-dependent defenses (like shields) don’t work during the counter -->
+<!-- 13) Stacks occupy a single grid square, with merge and split actions; armies can also hold separate units of the same type -->
+<!-- 14) Square formation: units face every side, no flank or rear penalty, but few units attack at once -->
+<!-- 15) Line formation: a longer front so more units attack at once, but vulnerable from the side and behind -->
+<!-- 16) Exposed units die first -->
+<!-- 17) Levels belong to unit types, so leveling swordsmen levels all swordsmen -->
+<!-- 18) Every new PvP match gives players their unlockables, but all unit types start at level 1 -->
+<!-- 19) Each unit type has a deterministic damage range; every attacking unit type shares one roll, even for 100 units -->
+<!-- 20) A higher roll grants more XP; the XP is the roll divided by the number of independent units of that type (stacks count once, across all armies) -->
+<!-- 21) Authority: different costs per unit type, with a limit per unit type; any number of armies allowed -->
+<!-- 22) Gold hires troops and pays salaries each world turn, using integer values so clients agree -->
+<!-- 23) Villages and other places can hire out troops and patronize you as long as you keep them safe -->
+<!-- 24) Insolvency makes the more expensive units desert first -->
+<!-- 25) Loans, to be added later -->
 
 <!DOCTYPE html>
 <html lang="en">
