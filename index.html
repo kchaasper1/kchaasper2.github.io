@@ -2,27 +2,28 @@
 <!-- 2) Sign-in so progress is remembered: start as an anonymous guest, upgrade to Google later without losing progress -->
 <!-- 3) Campaign with hand-made maps and missions that unlock things; whether unit levels persist is undecided -->
 <!-- 4) World Battle vs AI with procedurally generated maps -->
-<!-- 5) World Battle vs Players, turn-based, with procedurally generated maps and deterministic resolution; an AI takes over after a player disconnects for some time -->
-<!-- 6) Starting setup (may change later): one army containing a swordsman with a shield -->
-<!-- 7) Player starts at a point on the map, which contains things to do (initially enemies, plus villages) -->
+<!-- 5) World Battle vs Players, turn-based, with procedurally generated maps, deterministic resolution, and simultaneous world turns -->
+<!-- 6) If a player disconnects, an AI takes over after some time, and the player can take control back as soon as possible -->
+<!-- 7) Starting setup (may change later): one army containing a swordsman with a shield -->
 <!-- 8) Free movement on the overworld, with facing chosen at the end of a turn ******* -->
-<!-- 9) Contact with an enemy opens a simple grid battle (flat, few squares, no height) where the player controls their units’ movement -->
-<!-- 10) Flanking or rear-attacking on the overworld gives the attacker the first strike, with the defender’s units starting on the grid turned sideways or away -->
-<!-- 11) Battle sequence: the attacker strikes, then the defender turns if needed and counters, with a penalty that is larger for rear hits than side hits -->
-<!-- 12) Face-dependent defenses (like shields) don’t work during the counter -->
-<!-- 13) Stacks occupy a single grid square, with merge and split actions; armies can also hold separate units of the same type -->
-<!-- 14) Square formation: units face every side, no flank or rear penalty, but few units attack at once -->
-<!-- 15) Line formation: a longer front so more units attack at once, but vulnerable from the side and behind -->
-<!-- 16) Exposed units die first -->
-<!-- 17) Levels belong to unit types, so leveling swordsmen levels all swordsmen -->
-<!-- 18) Every new PvP match gives players their unlockables, but all unit types start at level 1 -->
-<!-- 19) Each unit type has a deterministic damage range; every attacking unit type shares one roll, even for 100 units -->
-<!-- 20) A higher roll grants more XP; the XP is the roll divided by the number of independent units of that type (stacks count once, across all armies) -->
-<!-- 21) Authority: different costs per unit type, with a limit per unit type; any number of armies allowed -->
-<!-- 22) Gold hires troops and pays salaries each world turn, using integer values so clients agree -->
-<!-- 23) Villages and other places can hire out troops and patronize you as long as you keep them safe -->
-<!-- 24) Insolvency makes the more expensive units desert first -->
-<!-- 25) Loans, to be added later -->
+<!-- 9) Armies can hold units, stacked or not; you set each unit's formation and the army's overall layout on the battle grid, which changes with the attack direction -->
+<!-- 10) A unit can spend a turn switching formation -->
+<!-- 11) Contact with an enemy opens a simple grid battle (flat, few squares, no height) where the player controls movement -->
+<!-- 12) Flanking or rear-attacking on the overworld gives the attacker the first strike, with defenders starting turned sideways or away -->
+<!-- 13) The attacker strikes, then the defender turns if needed and counters at a penalty, larger for rear hits than side hits -->
+<!-- 14) Face-dependent defenses (like shields) don't work during the counter -->
+<!-- 15) Stacks occupy a single grid square, with merge and split actions, and a small number above the unit shows how many units are really there -->
+<!-- 16) Square formation: equal numbers on all sides where possible, extras in the middle filling gaps; no flank or rear penalty, but few attackers -->
+<!-- 17) Line formation: as many in front as in back (odd numbers favor the front); many attackers, but vulnerable from the sides and behind -->
+<!-- 18) Exposed units die first, removed left to right; reserves replace the dead after the attack and don't attack immediately -->
+<!-- 19) Levels belong to unit types; every new PvP match starts all types at level 1 with unlockables kept -->
+<!-- 20) Each unit type has a deterministic damage range; every attacking unit type shares one roll -->
+<!-- 21) XP = roll ÷ number of independent attacking units of that type (across all armies), x100, rounded down, awarded at the end of a turn -->
+<!-- 22) Authority: different costs per unit type, plus a limit per unit type; any number of armies allowed -->
+<!-- 23) Gold hires troops and pays salaries each world turn, using integers; loans come later -->
+<!-- 24) Villages hire out troops and patronize you while safe; roaming monsters spawn occasionally and disturb or attack them -->
+<!-- 25) Enemies (AI or players) capture villages by standing on or near them until the end of a turn; if two opposing armies are in reach, they fight and the loser is pushed out of reach -->
+<!-- 26) Insolvency makes the more expensive units desert first -->
 
 <!DOCTYPE html>
 <html lang="en">
