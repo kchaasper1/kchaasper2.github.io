@@ -34,32 +34,36 @@
 //   damage = 1 dead + carry 10. Next hit of 25 = total 110 - 25 = 85, so 3
 //   alive and carry 5.
 //
-// SHARED ROLLS AND XP (per turn)
-//   Every stack of the same unit type OF THE SAME OWNER shares ONE roll for
-//   the whole turn, even if there are 100 units or several armies. The roll
-//   is made the first time that type attacks (or counters) in the turn and
-//   reused after that. Counters share the roll of their own owner's type.
-//   Contributors = the distinct stacks of that type that attacked or
-//   countered this turn. At the end of the turn call finishTurn() to get the
-//   XP awards for progression.awardTurnXp().
+// ROLLS AND XP
+//   Every strike and every counterattack makes a NEW roll for that stack.
+//   All units inside the stack deal the same rolled value, so 30 units deal
+//   30 times the roll. Other stacks of the same type roll for themselves.
+//   Each roll is written to the turn log. XP is worked out at the END of the
+//   turn, once it is known how many stacks of each type attacked:
+//     contributors = distinct stacks of that (owner, type) that rolled
+//     XP per roll  = roll position / contributors   (progression.js)
+//   finishTurn() returns one award per roll. Feed them to
+//   progression.awardTurnXp() grouped by owner (groupAwardsByOwner).
 //
 // DETERMINISM
 //   All math is integer. The only randomness is rng.rollRange() on the
-//   battle's own stream, and draws happen in a fixed order: the first time a
-//   (owner, type) attacks in a turn. Both PvP clients replaying the same
-//   moves get identical results.
+//   battle's own stream. One draw per strike and one per counterattack,
+//   strike first, so both PvP clients replaying the same moves get the same
+//   numbers.
 //
 // COMBATANT (one stack inside a battle)
-//   { id, ownerId, typeId, level, carry, formation }
+//   { id, ownerId, typeId, level, carry, formation, ...extras }
+//   (extras such as armyId, x, y are kept untouched by every function here)
 //   - id          the stack id
 //   - level       the owner's level for that type (fixed during the battle,
 //                 because levels only change after combat)
 //   - carry       damage already on the wounded unit (0..health-1)
 //   - formation   formation.js object (count lives in formation.count)
-//   Wounds are per battle: create combatants with carry 0 each battle.
+//   Wounds persist: carry comes from the army stack and goes back to it after
+//   the battle (see army.applyBattleOutcome) until the stack is healed.
 //
-// Nothing here edits its inputs. The turn rolls object is the one
-// intentional exception (it is a per-turn accumulator, like the rng).
+// Nothing here edits its inputs. resolveExchange() does append to the turn
+// log it is given, so pass a copy if you need the old log (battleGrid does).
 
 import { CONFIG } from "./config.js";
 import { getUnitType } from "./unitTypes.js";
@@ -79,8 +83,8 @@ const OPPOSITE = CONFIG.FACING.OPPOSITE;
 const DIRS = CONFIG.FACING.DIRECTIONS;
 const CLASS = CONFIG.FACING.ATTACK_CLASS;
 
-if (!C.SHARED_ROLL_PER_TYPE) {
-  throw new Error("battleRules: only SHARED_ROLL_PER_TYPE = true is supported");
+if (!C.ONE_ROLL_PER_STACK_ATTACK) {
+  throw new Error("battleRules: only ONE_ROLL_PER_STACK_ATTACK = true is supported");
 }
 
 const ok = (extra) => ({ ok: true, ...extra });
@@ -94,12 +98,14 @@ export function createCombatant({ id, ownerId, typeId, level = 1, count, formati
   getUnitType(typeId); // throws on an unknown type
   if (!Number.isInteger(count) || count < 1) throw new Error("battleRules: count must be an integer >= 1");
   if (!Number.isInteger(carry) || carry < 0) throw new Error("battleRules: carry must be an integer >= 0");
+  // A wound can never be as large as a whole unit's health.
+  const health = statsAtLevel(typeId, level).health;
   return {
     id,
     ownerId,
     typeId,
     level,
-    carry,
+    carry: Math.min(carry, health - 1),
     formation: createFormation(formationType ?? CONFIG.FORMATIONS.DEFAULT, count, facing),
   };
 }
@@ -115,6 +121,7 @@ export function combatantFromStack(stack, { ownerId, level = 1, quarterTurns = 0
     count: stack.count,
     formationType: stack.formationType,
     facing: rotateDir(stack.facing, quarterTurns),
+    carry: stack.carry ?? 0,
   });
 }
 
@@ -196,44 +203,53 @@ export function applyDamage(combatant, damage, hitFromSide) {
 }
 
 // ---------------------------------------------------------------
-// Shared rolls for a turn
+// The turn log (rolls and XP)
 // ---------------------------------------------------------------
 
 // One per battle turn. Plain JSON, safe to save with the match record.
-export function createTurnRolls() {
-  return { entries: {} };
+export function createTurnLog() {
+  return { events: [] };
 }
 
-function rollKey(ownerId, typeId) {
-  return `${ownerId}|${typeId}`;
+// Makes this stack's roll and records it in the log.
+function rollForStack(log, combatant, rng, kind) {
+  const stats = statsAtLevel(combatant.typeId, combatant.level);
+  const r = rng.rollRange(stats.damageMin, stats.damageMax);
+  const event = {
+    ownerId: combatant.ownerId,
+    typeId: combatant.typeId,
+    stackId: combatant.id,
+    kind,
+    value: r.value,
+    position: r.position,
+  };
+  log.events.push(event);
+  return event;
 }
 
-// The shared roll for this combatant's (owner, type). Rolls on first use.
-function getSharedRoll(rolls, combatant, rng) {
-  const key = rollKey(combatant.ownerId, combatant.typeId);
-  let entry = rolls.entries[key];
-  if (!entry) {
-    const stats = statsAtLevel(combatant.typeId, combatant.level);
-    const r = rng.rollRange(stats.damageMin, stats.damageMax);
-    entry = { ownerId: combatant.ownerId, typeId: combatant.typeId, value: r.value, position: r.position, attackers: [] };
-    rolls.entries[key] = entry;
+// Call at the END of a turn. Returns one XP award per roll, in the order the
+// rolls happened, grouped by owner and type:
+//   [{ ownerId, typeId, position, contributors }]
+// contributors = how many distinct stacks of that owner and type rolled
+// this turn (counterattacks included).
+export function finishTurn(log) {
+  const stacks = {};
+  for (const e of log.events) {
+    const key = `${e.ownerId}|${e.typeId}`;
+    (stacks[key] ||= new Set()).add(e.stackId);
   }
-  return entry;
-}
-
-function markAttacked(entry, combatantId) {
-  if (!entry.attackers.includes(combatantId)) entry.attackers.push(combatantId);
-}
-
-// Call at the END of a turn. Returns the XP awards, sorted by owner and
-// type: [{ ownerId, typeId, position, contributors }]. Feed each owner's
-// awards to progression.awardTurnXp() (see groupAwardsByOwner).
-export function finishTurn(rolls) {
-  const awards = Object.values(rolls.entries)
-    .filter((e) => e.attackers.length > 0)
-    .map((e) => ({ ownerId: e.ownerId, typeId: e.typeId, position: e.position, contributors: e.attackers.length }))
-    .sort((a, b) => (a.ownerId < b.ownerId ? -1 : a.ownerId > b.ownerId ? 1 : a.typeId < b.typeId ? -1 : a.typeId > b.typeId ? 1 : 0));
-  return awards;
+  return log.events
+    .map((e, i) => ({
+      ownerId: e.ownerId,
+      typeId: e.typeId,
+      position: e.position,
+      contributors: stacks[`${e.ownerId}|${e.typeId}`].size,
+      i,
+    }))
+    .sort((a, b) =>
+      a.ownerId < b.ownerId ? -1 : a.ownerId > b.ownerId ? 1 : a.typeId < b.typeId ? -1 : a.typeId > b.typeId ? 1 : a.i - b.i
+    )
+    .map(({ i, ...award }) => award);
 }
 
 // { ownerId: [{ typeId, position, contributors }, ...] }
@@ -255,11 +271,11 @@ export function groupAwardsByOwner(awards) {
 //   distance             grid distance (default 1). The attacker's range
 //                        must reach it, and so must the defender's for a
 //                        counter.
-//   rolls                createTurnRolls() for the current turn
+//   log                  the current turn's log (createTurnLog); rolls are appended
 //   rng                  the battle's rng stream
 //
 // Returns { ok: true, attacker, defender, report } or { ok: false, code, reason }.
-export function resolveExchange({ attacker, defender, hitFromSide, distance = 1, rolls, rng }) {
+export function resolveExchange({ attacker, defender, hitFromSide, distance = 1, log, rng }) {
   if (!DIRS.includes(hitFromSide)) return fail("bad_side", `Bad side "${hitFromSide}".`);
   if (!Number.isInteger(distance) || distance < 1) return fail("bad_distance", "Distance must be a whole number of at least 1.");
   if (!isAlive(attacker) || !isAlive(defender)) return fail("dead_unit", "A destroyed stack cannot fight.");
@@ -277,8 +293,7 @@ export function resolveExchange({ attacker, defender, hitFromSide, distance = 1,
   const attackClass = getAttackClass(defender, hitFromSide);
 
   // --- 1. Strike ---------------------------------------------------
-  const strikeRoll = getSharedRoll(rolls, attacker, rng);
-  markAttacked(strikeRoll, attacker.id);
+  const strikeRoll = rollForStack(log, attacker, rng, "strike");
   const strikeMultiplier = C.ATTACK_MULTIPLIER[attackClass];
   // A shield only works when the hit lands on the front.
   const strikeReduction = attackClass === CLASS.FRONT ? defenderType.faceDefense : 0;
@@ -315,8 +330,7 @@ export function resolveExchange({ attacker, defender, hitFromSide, distance = 1,
     // Survivors counter in place (reserves have not moved up yet).
     const counterers = countAttackers(newDefender.formation, hitFromSide);
     if (counterers > 0) {
-      const counterRoll = getSharedRoll(rolls, defender, rng);
-      markAttacked(counterRoll, defender.id);
+      const counterRoll = rollForStack(log, defender, rng, "counter");
       const counterMultiplier = C.COUNTER_MULTIPLIER[attackClass];
       // The attacker is assumed to be facing its target.
       const counterReduction = C.FACE_DEFENSES_ACTIVE_ON_COUNTER ? attackerType.faceDefense : 0;
@@ -392,14 +406,14 @@ export function battleRulesSelfTest(createRng) {
   // Exchange: rear attack, with a counter
   const run = (seed) => {
     const rng = createRng(seed);
-    const rolls = createTurnRolls();
+    const log = createTurnLog();
     const att = mk("att", "p1", "spearman", 10, "line", "N");
     const def = mk("def", "p2", "swordsman", 10, "line", "N");
     // Attacker is south of the defender, so the defender is hit from the rear.
-    const res = resolveExchange({ attacker: att, defender: def, hitFromSide: "S", rolls, rng });
-    return { res, rolls };
+    const res = resolveExchange({ attacker: att, defender: def, hitFromSide: "S", log, rng });
+    return { res, log };
   };
-  const { res, rolls } = run("test-seed");
+  const { res, log } = run("test-seed");
   eq(res.ok, true, "exchange ok");
   eq(res.report.attackClass, "rear", "exchange class");
   eq(res.report.strike.multiplierPercent, 150, "rear strike multiplier");
@@ -412,36 +426,48 @@ export function battleRulesSelfTest(createRng) {
     multiplierPercent: 150,
   });
   eq(res.report.strike.damage, expectedStrike, "strike damage matches formula");
+  eq(log.events.map((e) => e.kind), ["strike", "counter"], "one roll per strike and counter");
   // Determinism
   eq(run("test-seed").res.report, res.report, "same seed, same report");
 
   // Shield works on a front hit
-  const rng2 = createRng("shield");
   const front = resolveExchange({
     attacker: mk("att", "p1", "spearman", 10, "line", "N"),
     defender: mk("def", "p2", "swordsman", 10, "line", "S"),
     hitFromSide: "S", // defender faces S, so this is a front hit
-    rolls: createTurnRolls(),
-    rng: rng2,
+    log: createTurnLog(),
+    rng: createRng("shield"),
   });
   eq(front.report.attackClass, "front", "front class");
   eq(front.report.strike.reductionPercent, 30, "shield reduces front hit");
 
-  // Shared roll and contributors: two spearman stacks, one swordsman target
-  const rng3 = createRng("shared");
-  const turn = createTurnRolls();
-  const target = mk("t", "p2", "swordsman", 30, "square", "N");
-  const first = resolveExchange({ attacker: mk("sp1", "p1", "spearman", 4, "square", "N"), defender: target, hitFromSide: "S", rolls: turn, rng: rng3 });
-  const second = resolveExchange({ attacker: mk("sp2", "p1", "spearman", 4, "square", "N"), defender: first.defender, hitFromSide: "S", rolls: turn, rng: rng3 });
-  eq(first.report.strike.rollValue, second.report.strike.rollValue, "two stacks share one roll");
+  // Every stack rolls for itself; XP contributors are counted at turn end
+  const rng3 = createRng("rolls");
+  const turn = createTurnLog();
+  const target = mk("t", "p2", "swordsman", 60, "square", "N");
+  const first = resolveExchange({ attacker: mk("sp1", "p1", "spearman", 4, "square", "N"), defender: target, hitFromSide: "S", log: turn, rng: rng3 });
+  const second = resolveExchange({ attacker: mk("sp2", "p1", "spearman", 4, "square", "N"), defender: first.defender, hitFromSide: "S", log: turn, rng: rng3 });
+  eq(turn.events.length, 4, "two strikes and two counters, each rolled");
   const awards = finishTurn(turn);
-  const spear = awards.find((a) => a.ownerId === "p1" && a.typeId === "spearman");
-  eq(spear.contributors, 2, "two contributors");
-  eq(awards.find((a) => a.ownerId === "p2").contributors, 1, "defender stack counted once");
+  const spear = awards.filter((a) => a.ownerId === "p1" && a.typeId === "spearman");
+  eq(spear.length, 2, "one award per spearman roll");
+  eq(spear.every((a) => a.contributors === 2), true, "two contributing stacks");
+  const sword = awards.filter((a) => a.ownerId === "p2");
+  eq(sword.length, 2, "counter rolls give XP too");
+  eq(sword.every((a) => a.contributors === 1), true, "the defender stack counts once");
+  eq(groupAwardsByOwner(awards).p1.length, 2, "grouped by owner");
+
+  // Wounds carry in from the stack
+  const wounded = combatantFromStack(
+    { id: "w", typeId: "swordsman", count: 3, formationType: "square", facing: "N", carry: 12 },
+    { ownerId: "p1" }
+  );
+  eq(wounded.carry, 12, "carry loaded from the stack");
+  eq(totalHealth(wounded), 3 * 30 - 12, "total health includes the wound");
 
   // Failures
-  eq(resolveExchange({ attacker: mk("x", "p1", "spearman", 3, "line", "N"), defender: mk("y", "p1", "swordsman", 3, "line", "N"), hitFromSide: "S", rolls: createTurnRolls(), rng: createRng(1) }).code, "same_owner", "same owner");
-  eq(resolveExchange({ attacker: mk("x", "p1", "spearman", 3, "line", "N"), defender: mk("y", "p2", "swordsman", 3, "line", "N"), hitFromSide: "S", distance: 2, rolls: createTurnRolls(), rng: createRng(1) }).code, "out_of_range", "spear range");
+  eq(resolveExchange({ attacker: mk("x", "p1", "spearman", 3, "line", "N"), defender: mk("y", "p1", "swordsman", 3, "line", "N"), hitFromSide: "S", log: createTurnLog(), rng: createRng(1) }).code, "same_owner", "same owner");
+  eq(resolveExchange({ attacker: mk("x", "p1", "spearman", 3, "line", "N"), defender: mk("y", "p2", "swordsman", 3, "line", "N"), hitFromSide: "S", distance: 2, log: createTurnLog(), rng: createRng(1) }).code, "out_of_range", "spear range");
 
   // Archer shoots from distance 3, melee defender cannot counter
   const archer = resolveExchange({
@@ -449,7 +475,7 @@ export function battleRulesSelfTest(createRng) {
     defender: mk("sw", "p2", "swordsman", 10, "square", "N"),
     hitFromSide: "S",
     distance: 3,
-    rolls: createTurnRolls(),
+    log: createTurnLog(),
     rng: createRng("arrows"),
   });
   eq(archer.ok, true, "archer ok");
@@ -468,10 +494,9 @@ export default {
   getAttackClass,
   calcDamage,
   applyDamage,
-  createTurnRolls,
+  createTurnLog,
   finishTurn,
   groupAwardsByOwner,
   resolveExchange,
   battleRulesSelfTest,
 };
-
