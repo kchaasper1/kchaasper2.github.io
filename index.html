@@ -25,7 +25,18 @@
 <!-- 25) Enemies (AI or players) capture villages by standing on or near them until the end of a turn; if two opposing armies are in reach, they fight and the loser is pushed out of reach -->
 <!-- 26) Insolvency makes the more expensive units desert first -->
 
-9. battleAI.js: AI for enemies and disconnect takeover
+Phase 1: pure logic, no graphics (start here)
+1. config.js: all tunable numbers (multipliers, costs, salaries, starting loadout)     check
+2. rng.js: seeded random generator     check
+3. unitTypes.js: unit type data (damage range, authority cost, hire cost, salary)     check
+4. progression.js: per-type levels and fixed-point XP     check
+5. formation.js: square and line layouts, exposed units, casualty and reserve rules     check
+6. army.js: armies, stacks, merge/split, authority checks, formation switching     check
+7. battleRules.js: facing, flank bonuses, counterattack, shared roll, XP award     check
+
+Phase 2: battle (the vertical slice)
+8. battleGrid.js: grid, movement, placement by attack direction     check
+9. battleAI.js: AI for enemies and disconnect takeover     check
 10. battleUI.js: rendering, unit-count numbers, controls
 
 Phase 3: overworld
