@@ -18,6 +18,7 @@
 //   health           health of ONE unit
 //   attackRange      grid squares the unit can hit (1 = adjacent only)
 //   movePoints       grid squares moved per battle turn
+//   speed            turn order in battle: faster units act first
 //   faceDefense      percent damage reduction while FACING the attacker and
 //                    NOT countering (shield). 0 = none.
 //   authorityCost    authority used by ONE unit
@@ -48,6 +49,7 @@ const RAW_UNIT_TYPES = [
     health: 30,
     attackRange: 1,
     movePoints: 3,
+    speed: 4,
     faceDefense: 30, // shield
     authorityCost: 2,
     authorityCap: 6,
@@ -67,6 +69,7 @@ const RAW_UNIT_TYPES = [
     health: 28,
     attackRange: 1,
     movePoints: 3,
+    speed: 5,
     faceDefense: 0,
     authorityCost: 2,
     authorityCap: 6,
@@ -86,6 +89,7 @@ const RAW_UNIT_TYPES = [
     health: 18,
     attackRange: 3,
     movePoints: 3,
+    speed: 3,
     faceDefense: 0,
     authorityCost: 3,
     authorityCap: 4,
@@ -105,6 +109,7 @@ const RAW_UNIT_TYPES = [
     health: 20,
     attackRange: 1,
     movePoints: 4,
+    speed: 7,
     faceDefense: 0,
     authorityCost: 0,
     authorityCap: 0,
@@ -127,6 +132,7 @@ const INTEGER_FIELDS = [
   "health",
   "attackRange",
   "movePoints",
+  "speed",
   "faceDefense",
   "authorityCost",
   "authorityCap",
@@ -149,6 +155,7 @@ function validate(list) {
     if (t.damageMin > t.damageMax) throw new Error(`unitTypes: "${t.id}" damageMin > damageMax`);
     if (t.health < 1) throw new Error(`unitTypes: "${t.id}" health must be at least 1`);
     if (t.attackRange < 1) throw new Error(`unitTypes: "${t.id}" attackRange must be at least 1`);
+    if (t.speed < 1) throw new Error(`unitTypes: "${t.id}" speed must be at least 1`);
     if (t.faceDefense > 100) throw new Error(`unitTypes: "${t.id}" faceDefense above 100`);
     if (!["melee", "ranged"].includes(t.category)) {
       throw new Error(`unitTypes: "${t.id}" bad category "${t.category}"`);
