@@ -50,8 +50,11 @@ export const CONFIG = deepFreeze({
     // Rear hits give a WEAKER counter than side hits.
     COUNTER_MULTIPLIER: { front: 100, side: 70, rear: 40 },
 
-    // Face-dependent defenses (e.g. shields) only work when the defender
-    // is facing the attacker and is not countering.
+    // Face-dependent defenses (e.g. shields) only work against an attack
+    // that hits the unit's front (a square counts as front on every side).
+    // When this is false, a counterattack ignores the target's face-dependent
+    // defenses. When true, the unit that started the exchange is assumed to
+    // be facing its target, so its own shield works against the counter.
     FACE_DEFENSES_ACTIVE_ON_COUNTER: false,
 
     // Order inside one exchange: attacker strikes, then defender counters.
@@ -191,6 +194,18 @@ export const CONFIG = deepFreeze({
     MAX_ARMIES: 0, // 0 = unlimited
   },
 
+  // ---------------------------------------------------------------
+  // Armies (a stack = one unit entry; an army holds several stacks)
+  // ---------------------------------------------------------------
+  ARMY: {
+    // Each army deploys its stacks into a small local zone on its own side
+    // of the battle grid. Row 0 is the front (nearest the enemy), column 0
+    // is the left. battleGrid.js rotates it by the attack direction.
+    // The zone size is also the maximum number of stacks per army.
+    DEPLOY_COLS: 5,
+    DEPLOY_ROWS: 2,
+  },
+  
   // ---------------------------------------------------------------
   // Economy (integer gold only)
   // ---------------------------------------------------------------
