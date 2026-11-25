@@ -61,9 +61,10 @@ export const CONFIG = deepFreeze({
     // Dead defenders do not counter. Reserves enter after both strikes.
     RESERVES_ENTER_AFTER_EXCHANGE: true,
 
-    // Damage the rolled value is based on: each unit type shares ONE roll
-    // per attack, even for 100 units (see rng.js / battleRules.js).
-    SHARED_ROLL_PER_TYPE: true,
+    // Every strike and every counterattack makes a NEW roll for that stack.
+    // All units inside the stack deal that same rolled value (30 units deal
+    // 30 times the roll). Other stacks of the same type roll separately.
+    ONE_ROLL_PER_STACK_ATTACK: true,
   },
 
   // ---------------------------------------------------------------
@@ -120,6 +121,16 @@ export const CONFIG = deepFreeze({
     FLANK_GIVES_FIRST_STRIKE: true,
     // Show the real unit count above each unit's head.
     SHOW_UNIT_COUNT: true,
+    // Turn order: faster units (unitTypes speed) act first. Ties are broken
+    // in this order: the side that started the battle, then owner id, then
+    // stack id.
+    TIE_BREAK: ["initiator_first", "owner_id", "stack_id"],
+    // On a flank or rear contact the attacker's units all act before the
+    // defender's for this many turns, then normal speed order applies.
+    FIRST_STRIKE_TURNS: 1,
+    // Safety net against stalemates. After this many turns the side with
+    // more total health wins (a draw if equal).
+    MAX_TURNS: 30,
   },
 
   // ---------------------------------------------------------------
@@ -205,7 +216,7 @@ export const CONFIG = deepFreeze({
     DEPLOY_COLS: 5,
     DEPLOY_ROWS: 2,
   },
-  
+
   // ---------------------------------------------------------------
   // Economy (integer gold only)
   // ---------------------------------------------------------------
