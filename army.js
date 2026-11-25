@@ -357,9 +357,14 @@ export function mergeStacks(army, stackIdA, stackIdB, formationType) {
 
 // Splits `splitCount` units off a stack into a new stack with the same
 // formation and facing. Authority does not change.
-export function splitStack(army, stackId, splitCount, ctx = {}) {
+// A stack has one wounded unit (its `carry`). By default the wound stays
+// with the original stack. With options.takeWounded the wounded unit goes
+// into the NEW stack and keeps its wound (the original is left unwounded).
+// Splitting off a single wounded unit gives you a stack of 1 wounded unit.
+export function splitStack(army, stackId, splitCount, ctx = {}, options = {}) {
   const stack = getStack(army, stackId);
   if (!stack) return fail("unknown_stack", "That stack does not exist.");
+  if (options.takeWounded && stack.carry === 0) return fail("not_wounded", "That stack has no wounded unit.");
   if (!Number.isInteger(splitCount) || splitCount < 1 || splitCount >= stack.count) {
     return fail("bad_count", "The split must leave at least 1 unit in each stack.");
   }
@@ -376,9 +381,14 @@ export function splitStack(army, stackId, splitCount, ctx = {}) {
     formationType: stack.formationType,
     facing: stack.facing,
     cell,
+    carry: options.takeWounded ? stack.carry : 0,
   });
   const stacks = army.stacks
-    .map((s) => (s.id === stackId ? { ...cloneStack(s), count: s.count - splitCount } : cloneStack(s)))
+    .map((s) =>
+      s.id === stackId
+        ? { ...cloneStack(s), count: s.count - splitCount, carry: options.takeWounded ? 0 : s.carry }
+        : cloneStack(s)
+    )
     .concat([newStack]);
   return ok(withStacks(army, stacks), { newStackId: newStack.id });
 }
@@ -740,7 +750,10 @@ export function armySelfTest() {
   ]);
   eq(after.stacks.length, 1, "dead stack removed");
   eq([after.stacks[0].count, after.stacks[0].carry], [1, 3], "outcome written back");
-  eq(splitStack(w, "a", 1, { nextId }).army.stacks[2].carry, 0, "split-off units are unwounded");
+  eq(splitStack(w, "a", 1, { nextId }).army.stacks[2].carry, 0, "split-off units are unwounded by default");
+  const takeW = splitStack(w, "a", 1, { nextId }, { takeWounded: true });
+  eq([takeW.army.stacks[0].carry, takeW.army.stacks[2].carry, takeW.army.stacks[2].count], [0, 5, 1], "split can take the wounded unit");
+  eq(splitStack(healedB.army, "b", 1, { nextId }, { takeWounded: true }).code, "not_wounded", "nothing to take");
 
   // Loading sanitizes bad data
   const dirty = deserializeArmy({ id: "x", stacks: [{ id: "a", typeId: "swordsman", count: 3 }, { id: "b", typeId: "nope", count: 1 }] });
@@ -790,4 +803,3 @@ export default {
   serializeArmy,
   armySelfTest,
 };
-
