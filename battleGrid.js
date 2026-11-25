@@ -537,6 +537,32 @@ export function applyOutcomesToArmies(armies, outcomes) {
   );
 }
 
+// ---------------------------------------------------------------
+// Actions as data (for logging, replay and the AI)
+// ---------------------------------------------------------------
+
+// Every player or AI decision is one of these plain objects, so it can be
+// written to the match record and replayed identically on every client:
+//   { type: "move",   x, y }
+//   { type: "attack", targetId }
+//   { type: "switch", formation: "square" | "line" }
+//   { type: "end",    facing? }
+// Returns the same result the matching function returns.
+export function applyBattleAction(state, action, rng) {
+  switch (action && action.type) {
+    case "move":
+      return moveActive(state, action.x, action.y);
+    case "attack":
+      return attackActive(state, action.targetId, rng);
+    case "switch":
+      return switchFormationActive(state, action.formation);
+    case "end":
+      return endActivation(state, action.facing);
+    default:
+      return fail("bad_action", "Unknown action.");
+  }
+}
+
 // Moves a unit without any checks. For setting up tests and scenarios only.
 export function placeUnit(state, unitId, x, y) {
   const u = getUnit(state, unitId);
@@ -689,6 +715,24 @@ export default {
   listLivingUnits,
   unitAt,
   quarterTurnsFor,
+  deploymentCell,
+  createBattle,
+  getActiveUnit,
+  getUpcomingOrder,
+  getReachableCells,
+  moveActive,
+  getAttackableTargets,
+  attackActive,
+  switchFormationActive,
+  endActivation,
+  applyBattleAction,
+  isOver,
+  getWinner,
+  getOutcomes,
+  applyOutcomesToArmies,
+  placeUnit,
+  battleGridSelfTest,
+};
   deploymentCell,
   createBattle,
   getActiveUnit,
