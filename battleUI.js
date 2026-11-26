@@ -38,7 +38,8 @@
 // WHAT YOU SEE
 //   - The grid, with a small number above each unit's head showing how many
 //     units are really in the stack, a red pip when the stack is wounded,
-//     the formation icon (square or line) and, for a line, its facing.
+//     the formation icon (square or line) and, for a line, a bright bar on
+//     the edge it faces.
 //   - Your active unit's reachable squares (blue) and attackable enemies
 //     (red), with the hit class and multiplier when you hover an enemy.
 //   - A panel with whose move it is, the turn order, details of the hovered
@@ -476,27 +477,20 @@ function drawUnit(ctx, vm, u) {
     ctx.fillRect(ix, iy + is + 1.5, is * 2 + 1.5, is);
   }
 
-  // Facing triangle (lines only; a square faces every side)
+  // Facing bar (lines only; a square faces every side): a bright bar along
+  // the edge the line's front points to. A bar, not an arrow, so the count
+  // number above the unit's head never hides it.
   if (u.formationType === "line") {
-    const v = VECTORS[u.isActive && vm.canAct && vm.pendingFacing ? vm.pendingFacing : u.facing];
+    const f = VECTORS[u.isActive && vm.canAct && vm.pendingFacing ? vm.pendingFacing : u.facing];
     const cx = r.x + r.w / 2;
     const cy = r.y + r.h / 2;
-    const bx = cx + v.x * L.cell * 0.37;
-    const by = cy + v.y * L.cell * 0.37;
-    const tx = cx + v.x * L.cell * 0.49;
-    const ty = cy + v.y * L.cell * 0.49;
-    const px = -v.y * L.cell * 0.12;
-    const py = v.x * L.cell * 0.12;
-    ctx.beginPath();
-    ctx.moveTo(tx, ty);
-    ctx.lineTo(bx + px, by + py);
-    ctx.lineTo(bx - px, by - py);
-    ctx.closePath();
+    const thick = Math.max(4, L.cell * 0.09);
+    const len = L.cell * 0.62;
+    const ex = cx + f.x * (w / 2 - thick / 2);
+    const ey = cy + f.y * (h / 2 - thick / 2);
     ctx.fillStyle = "#f4f7fb";
-    ctx.fill();
-    ctx.strokeStyle = "rgba(0,0,0,0.6)";
-    ctx.lineWidth = 1;
-    ctx.stroke();
+    if (f.y !== 0) ctx.fillRect(ex - len / 2, ey - thick / 2, len, thick);
+    else ctx.fillRect(ex - thick / 2, ey - len / 2, thick, len);
   }
 
   // Wound pip (top right)
@@ -800,7 +794,7 @@ export function createBattleUI({ canvas, state, localOwnerId = null, ownerNames 
 
   function addFloater(unit, text, color) {
     const r = cellRect(layout, unit.x, unit.y);
-    floaters.push({ x: r.x + r.w / 2, y: r.y + r.h * 0.3, text, color, age: 0, ttl: 1300 });
+    floaters.push({ x: r.x + r.w / 2, y: r.y + r.h * 0.62, text, color, age: 0, ttl: 1300 });
   }
 
   // Animate and log one attack. Call it after setState() with the report
@@ -1075,4 +1069,3 @@ export default {
   createBattleUI,
   battleUISelfTest,
 };
-
