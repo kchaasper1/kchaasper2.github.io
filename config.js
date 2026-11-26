@@ -236,10 +236,21 @@ export const CONFIG = deepFreeze({
     START_GOLD: 100,
     // Salaries are paid once per world turn.
     SALARY_PERIOD_TURNS: 1,
-    // Insolvency: the most expensive units desert first.
+    // Insolvency: when gold cannot cover the salaries, the cheapest units are
+    // paid first and the rest go unpaid. Every world turn, unpaid units
+    // desert gradually: expected deserters = unpaid units x this chance
+    // (per-mille, 250 = 25%). The most expensive units desert first.
+    DESERTION_CHANCE_PER_MILLE: 250,
     DESERTION_ORDER: ["hire_cost_desc", "type_id_asc", "unit_id_asc"],
-    // How many units desert per world turn while unpaid (0 = all unpaid).
-    DESERTERS_PER_TURN: 0,
+    // Gold from winning a battle. Off for now: the loot function exists
+    // (economy.calculateLoot) but returns 0 until you enable and tune this.
+    LOOT: {
+      ENABLED: false,
+      // Percent of the defeated units' hire cost.
+      PERCENT_OF_HIRE_COST: 0,
+      // Flat gold per defeated unit.
+      FIXED_PER_UNIT: 0,
+    },
     LOANS_ENABLED: false, // added later
     MIN_GOLD: 0, // gold never goes below this
   },
