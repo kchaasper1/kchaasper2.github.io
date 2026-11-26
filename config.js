@@ -145,10 +145,22 @@ export const CONFIG = deepFreeze({
     // Facing is chosen by the player at the end of the army's turn.
     FACING_CHOSEN_AT_TURN_END: true,
 
-    // Contact resolution:
-    //  - The army that reaches the contact point LATER is the attacker.
+    // A turn of movement is simulated in this many equal steps, so both
+    // armies move at the same time and contact is found in a fixed order.
+    // More steps = finer contact detection. Must keep each step small enough
+    // that two armies cannot pass through each other (overworld.js checks).
+    STEPS_PER_TURN: 24,
+
+    // Contact resolution (overworld.js):
+    //  - Armies of different owners make contact when they come within
+    //    CONTACT_RANGE while at least one of them is closing the distance.
+    //  - The army that reaches the contact point LATER is the attacker. In
+    //    practice: an army that already stopped (at its destination, after
+    //    an earlier contact, or with no order) was there first, so the army
+    //    still closing in is the attacker.
     //  - Reaching a neutral thing (not an army) stops movement.
-    //  - Equal arrival time: no attacker, no first strike, both stop.
+    //  - Equal arrival time (both closing in at the same step): no attacker,
+    //    no first strike, both stop.
     LATER_ARRIVAL_IS_ATTACKER: true,
     NEUTRAL_STOPS_MOVEMENT: true,
     ARRIVAL_TIE: "no_first_strike",
