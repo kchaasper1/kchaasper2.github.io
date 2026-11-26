@@ -173,10 +173,10 @@ export function createMatchStreams(matchSeed) {
     map: root.fork("map"),
     monsters: root.fork("monsters"),
     villages: root.fork("villages"),
+    economy: root.fork("economy"),
     ai: root.fork("ai"),
     battle: (battleId) => root.fork(`battle:${battleId}`),
   };
 }
 
 export default createRng;
-
