@@ -11,7 +11,8 @@
 //     x, y,             position in overworld sub-tiles
 //     ownerId,          null while neutral
 //     stored,           income saved up and not yet collected (gold)
-//     income,           gold added per world turn while owned
+//     incomeMilli,      income per world turn x 1000 (so 1% growth is exact);
+//                       the gold paid is floor(incomeMilli / 1000)
 //     canHire,          can troops be hired here?
 //     hireTypes         null (any hireable type) or a list of unit type ids
 //   }
@@ -19,7 +20,11 @@
 // ---------------------------------------------------------------
 // RULES
 // ---------------------------------------------------------------
-// INCOME. An owned village adds `income` gold to its `stored` pile every
+// GROWTH. Every village's income grows by INCOME_GROWTH_PERCENT_PER_DAY
+//  (1%) each day, compounding, whether or not anyone controls it
+//  (growIncome). A monster raid cuts it by 10% to 50% (applyRaids).
+//
+// INCOME. An owned village adds its income in gold to its `stored` pile every
 //  world turn. If the village is safe, everything stored is collected by its
 //  owner that turn. If it is DISTURBED the income is FROZEN: it keeps piling
 //  up in the village but cannot be collected. As soon as the threat is gone,
@@ -72,13 +77,20 @@ function cmpId(a, b) {
 // ---------------------------------------------------------------
 
 // Give the position as a tile (tx, ty) or as sub-tiles (x, y).
-export function createVillage({ id, name = "Village", tx, ty, x, y, ownerId = null, income = V.INCOME_PER_TURN, canHire = V.CAN_HIRE, hireTypes = null, stored = 0 }) {
+// income is whole gold per turn; incomeMilli (x1000) overrides it.
+export function createVillage({ id, name = "Village", tx, ty, x, y, ownerId = null, income = V.INCOME_PER_TURN, incomeMilli, canHire = V.CAN_HIRE, hireTypes = null, stored = 0 }) {
   if (!id) throw new Error("villages: createVillage needs an id");
   const p = tx !== undefined ? tileToPoint(tx, ty) : { x, y };
   if (!Number.isInteger(p.x) || !Number.isInteger(p.y)) throw new Error("villages: village needs an integer position");
-  if (!Number.isInteger(income) || income < 0) throw new Error("villages: income must be a non-negative integer");
+  const milli = incomeMilli !== undefined ? incomeMilli : income * 1000;
+  if (!Number.isInteger(milli) || milli < 0) throw new Error("villages: income must be a non-negative integer");
   if (!Number.isInteger(stored) || stored < 0) throw new Error("villages: stored must be a non-negative integer");
-  return { id, name, x: p.x, y: p.y, ownerId, stored, income, canHire, hireTypes };
+  return { id, name, x: p.x, y: p.y, ownerId, stored, incomeMilli: milli, canHire, hireTypes };
+}
+
+// Gold this village pays per world turn right now.
+export function villageIncome(village) {
+  return Math.floor(village.incomeMilli / 1000);
 }
 
 export function getVillage(villages, villageId) {
@@ -138,12 +150,12 @@ export function getVillageStatus(world, village) {
   return {
     ownerId: village.ownerId,
     stored: village.stored,
-    incomePerTurn: owned ? village.income : 0,
+    incomePerTurn: owned ? villageIncome(village) : 0,
     disturbed: threats.length > 0,
     frozen: owned && threats.length > 0,
     threats,
     // What the owner would receive at the next income step.
-    nextCollection: owned && threats.length === 0 ? village.stored + village.income : 0,
+    nextCollection: owned && threats.length === 0 ? village.stored + villageIncome(village) : 0,
   };
 }
 
@@ -165,7 +177,7 @@ export function processIncome(villages, world) {
 
   for (const v of villages.slice().sort((a, b) => cmpId(a.id, b.id))) {
     if (v.ownerId === null) continue;
-    const stored = v.stored + v.income;
+    const stored = v.stored + villageIncome(v);
     const frozen = isDisturbed(world, v);
     if (frozen) {
       next = replaceVillage(next, { ...v, stored });
@@ -177,6 +189,38 @@ export function processIncome(villages, world) {
     }
   }
   return { villages: next, incomeByOwner, events };
+}
+
+// ---------------------------------------------------------------
+// Growth and raids
+// ---------------------------------------------------------------
+
+// Daily growth of every village's income, owned or not. Call it once per
+// world turn with the turn number; it only acts on the last turn of a day
+// (CONFIG.TURNS.TURNS_PER_DAY). Compounds: +1% of the current income.
+export function growIncome(villages, turn) {
+  if (turn % CONFIG.TURNS.TURNS_PER_DAY !== 0) return villages;
+  return villages.map((v) => ({
+    ...v,
+    incomeMilli: Math.floor((v.incomeMilli * (CONFIG.MATH.PERCENT + V.INCOME_GROWTH_PERCENT_PER_DAY)) / CONFIG.MATH.PERCENT),
+  }));
+}
+
+// Applies monster raids (events from monsters.js): each cuts the village's
+// income by cutPercent. raids: [{ villageId, cutPercent }].
+export function applyRaids(villages, raids) {
+  let next = villages;
+  for (const r of raids) {
+    if (!Number.isInteger(r.cutPercent) || r.cutPercent < 0 || r.cutPercent > 100) {
+      throw new Error(`villages: bad raid cut ${r.cutPercent}`);
+    }
+    next = next.map((v) =>
+      v.id === r.villageId
+        ? { ...v, incomeMilli: Math.floor((v.incomeMilli * (CONFIG.MATH.PERCENT - r.cutPercent)) / CONFIG.MATH.PERCENT) }
+        : v
+    );
+  }
+  return next;
 }
 
 // ---------------------------------------------------------------
@@ -276,7 +320,8 @@ export function deserializeVillages(raw) {
     const x = Number(r.x);
     const y = Number(r.y);
     if (!Number.isInteger(x) || !Number.isInteger(y)) continue;
-    const income = Math.floor(Number(r.income));
+    const milliRaw = r.incomeMilli !== undefined ? Number(r.incomeMilli) : Number(r.income) * 1000;
+    const incomeMilli = Math.floor(milliRaw);
     const stored = Math.floor(Number(r.stored));
     seen.add(r.id);
     out.push({
@@ -286,7 +331,7 @@ export function deserializeVillages(raw) {
       y,
       ownerId: r.ownerId ?? null,
       stored: Number.isFinite(stored) && stored > 0 ? stored : 0,
-      income: Number.isFinite(income) && income >= 0 ? income : V.INCOME_PER_TURN,
+      incomeMilli: Number.isFinite(incomeMilli) && incomeMilli >= 0 ? incomeMilli : V.INCOME_PER_TURN * 1000,
       canHire: typeof r.canHire === "boolean" ? r.canHire : V.CAN_HIRE,
       hireTypes: Array.isArray(r.hireTypes) ? r.hireTypes.filter((t) => typeof t === "string") : null,
     });
@@ -313,8 +358,26 @@ export function villagesSelfTest() {
   // Creating
   const n = createVillage({ id: "v1", tx: 10, ty: 10 });
   eq([n.x, n.y], [tileToPoint(10, 10).x, tileToPoint(10, 10).y], "position from tile");
-  eq([n.ownerId, n.stored, n.income], [null, 0, V.INCOME_PER_TURN], "neutral village defaults");
+  eq([n.ownerId, n.stored, villageIncome(n)], [null, 0, V.INCOME_PER_TURN], "neutral village defaults");
   eq(CAPTURE_RANGE_SUBTILES, V.CAPTURE_RANGE * S, "capture range in sub-tiles");
+
+  // Daily growth: every village, owned or not, compounding
+  let grown = [n, owned("p1")];
+  grown = growIncome(grown, 1);
+  eq(grown.map((v) => v.incomeMilli), [5050, 5050], "+1% on day 1, for everyone");
+  eq(villageIncome(grown[0]), 5, "5.05 pays 5 gold");
+  for (let day = 2; day <= 30; day++) grown = growIncome(grown, day);
+  eq(grown[0].incomeMilli, grown[1].incomeMilli, "owned and neutral grow the same");
+  eq(villageIncome(grown[0]) > 5, true, "income has grown after 30 days");
+  eq(grown[0].incomeMilli >= 6700 && grown[0].incomeMilli <= 6730, true, "about 5 x 1.01^30 = 6.74");
+
+  // Raids cut the income by a percent
+  const raided = applyRaids([createVillage({ id: "v1", tx: 1, ty: 1, income: 6 }), createVillage({ id: "v2", tx: 2, ty: 2, income: 6 })], [{ villageId: "v1", cutPercent: 50 }]);
+  eq(raided.map((v) => v.incomeMilli), [3000, 6000], "raid halves one village only");
+  eq(applyRaids([n], [{ villageId: "v1", cutPercent: 10 }])[0].incomeMilli, 4500, "10% cut");
+  eq(applyRaids([n], [{ villageId: "v1", cutPercent: 10 }, { villageId: "v1", cutPercent: 10 }])[0].incomeMilli, 4050, "raids stack");
+  // Growth then recovers it
+  eq(growIncome(applyRaids([n], [{ villageId: "v1", cutPercent: 50 }]), 1)[0].incomeMilli, 2525, "growth continues after a raid");
 
   // Safe income is collected
   let w = withArmy(world(), "far", "p1", 40, 40);
@@ -407,10 +470,13 @@ export default {
   getVillage,
   listOwnedVillages,
   armiesInCaptureRange,
+  villageIncome,
   getThreats,
   isDisturbed,
   getVillageStatus,
   processIncome,
+  growIncome,
+  applyRaids,
   findContests,
   pushLoserOut,
   updateCaptures,
