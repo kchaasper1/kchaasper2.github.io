@@ -16,7 +16,8 @@
 // itself: turnResolver.js runs runUpkeep() at the right step of the turn.
 //
 // ECONOMY STATE (plain JSON, one per player)
-//   { gold }
+//   { gold, debt }
+//   debt is back pay owed to the troops (not a loan; loans come later).
 //
 // ---------------------------------------------------------------
 // UPKEEP EACH WORLD TURN (CONFIG.TURNS.RESOLUTION_ORDER)
@@ -25,15 +26,20 @@
 //  2. SALARIES (every SALARY_PERIOD_TURNS turns). Each unit costs its
 //     type's salary. If gold covers everything, everyone is paid. If not,
 //     units are paid CHEAPEST FIRST (the reverse of the desertion order)
-//     until the gold runs out. Everything after that point is unpaid.
-//     There is no debt: unpaid salary is simply not paid.
-//  3. DESERTION. Unpaid units desert gradually. Each turn the expected
-//     number of deserters is
-//         unpaid units x CONFIG.ECONOMY.DESERTION_CHANCE_PER_MILLE / 1000
-//     The whole part always deserts, and the fractional part is a chance
-//     of one more (one random draw, so the result is deterministic and
-//     cheap even for stacks of 100). Deserters are taken from the unpaid
-//     units in the desertion order: the most expensive units first.
+//     until the gold runs out. Everything after that is unpaid, and the
+//     unpaid salary is added to the DEBT.
+//  3. DEBT. It stays until the player repays it (repayDebt), or
+//     automatically if CONFIG.ECONOMY.AUTO_REPAY_DEBT is on.
+//  4. DESERTION. While there is debt, every unit may desert, paid or not.
+//     The chance grows with the debt compared with the army's payroll:
+//         chance = (debt / payroll) x DESERTION_PER_MILLE_PER_TURN_OF_DEBT
+//     capped at DESERTION_MAX_PER_MILLE. Expected deserters = units x
+//     chance: the whole part always deserts and the fractional part is a
+//     chance of one more (a single random draw, so it is deterministic and
+//     cheap even for stacks of 100). Deserters are taken in the desertion
+//     order: the most expensive units first. Deserters take their share of
+//     the debt with them (FORGIVE_DEBT_OF_DESERTERS), so losing troops does
+//     not push the rest into a spiral.
 //  Wounds stay with the stack. A stack that loses all its units disappears.
 //
 // DETERMINISM
@@ -47,8 +53,11 @@ import { addStack, addToStack, removeUnits, maxAddable } from "./army.js";
 
 const E = CONFIG.ECONOMY;
 
-if (!Number.isInteger(E.DESERTION_CHANCE_PER_MILLE) || E.DESERTION_CHANCE_PER_MILLE < 0 || E.DESERTION_CHANCE_PER_MILLE > 1000) {
-  throw new Error("economy: DESERTION_CHANCE_PER_MILLE must be an integer from 0 to 1000");
+if (!Number.isInteger(E.DESERTION_PER_MILLE_PER_TURN_OF_DEBT) || E.DESERTION_PER_MILLE_PER_TURN_OF_DEBT < 0) {
+  throw new Error("economy: DESERTION_PER_MILLE_PER_TURN_OF_DEBT must be a non-negative integer");
+}
+if (!Number.isInteger(E.DESERTION_MAX_PER_MILLE) || E.DESERTION_MAX_PER_MILLE < 0 || E.DESERTION_MAX_PER_MILLE > 1000) {
+  throw new Error("economy: DESERTION_MAX_PER_MILLE must be an integer from 0 to 1000");
 }
 if (E.LOANS_ENABLED) throw new Error("economy: loans are not implemented yet");
 
@@ -58,9 +67,10 @@ const fail = (code, reason) => ({ ok: false, code, reason });
 // Gold
 // ---------------------------------------------------------------
 
-export function createEconomy(gold = E.START_GOLD) {
+export function createEconomy(gold = E.START_GOLD, debt = 0) {
   if (!Number.isInteger(gold) || gold < E.MIN_GOLD) throw new Error("economy: gold must be an integer");
-  return { gold };
+  if (!Number.isInteger(debt) || debt < 0) throw new Error("economy: debt must be a non-negative integer");
+  return { gold, debt };
 }
 
 export function canAfford(economy, cost) {
@@ -82,7 +92,23 @@ export function spendGold(economy, cost) {
 // Makes any saved/received economy state safe.
 export function deserializeEconomy(raw) {
   const gold = Math.floor(Number(raw && raw.gold));
-  return { gold: Number.isFinite(gold) && gold >= E.MIN_GOLD ? gold : E.START_GOLD };
+  const debt = Math.floor(Number(raw && raw.debt));
+  return {
+    gold: Number.isFinite(gold) && gold >= E.MIN_GOLD ? gold : E.START_GOLD,
+    debt: Number.isFinite(debt) && debt > 0 ? debt : 0,
+  };
+}
+
+// Pays back debt with gold. `amount` is optional (default: as much as
+// possible). Returns { ok, economy, repaid } or { ok: false, code, reason }.
+export function repayDebt(economy, amount) {
+  if (economy.debt === 0) return fail("no_debt", "There is no debt to repay.");
+  if (amount !== undefined && (!Number.isInteger(amount) || amount < 1)) {
+    return fail("bad_amount", "Amount must be a whole number of at least 1.");
+  }
+  const repaid = Math.min(amount ?? Infinity, economy.gold, economy.debt);
+  if (repaid <= 0) return fail("not_enough_gold", "There is no gold to repay with.");
+  return { ok: true, economy: { ...economy, gold: economy.gold - repaid, debt: economy.debt - repaid }, repaid };
 }
 
 // ---------------------------------------------------------------
@@ -160,19 +186,20 @@ export function totalSalary(armies) {
 }
 
 // Adds income, then pays salaries cheapest-first until the gold runs out.
+// Unpaid salary is added to the debt.
 //   income   gold from villages this turn (villages.js)
 //   turn     the world turn number (decides if salaries are due)
 // Returns { economy, report } where report is
 //   {
 //     salaryTurn, income, salaryDue, salaryPaid,
-//     unpaid: [{ armyId, stackId, typeId, units }]   // desertion order
-//     unpaidUnits
+//     unpaid: [{ armyId, stackId, typeId, units }],   // desertion order
+//     unpaidUnits, debtAdded, debtRepaid, debt
 //   }
-// It never changes the armies. Use it with previewUpkeep() to warn the
-// player before desertion happens.
+// It never changes the armies. Use previewUpkeep() to warn the player.
 export function payUpkeep(economy, armies, { income = 0, turn = 1 } = {}) {
   if (!Number.isInteger(income) || income < 0) throw new Error("economy: income must be a non-negative integer");
   let gold = economy.gold + income;
+  let debt = economy.debt;
   const salaryTurn = isSalaryTurn(turn);
 
   const entries = [];
@@ -186,8 +213,8 @@ export function payUpkeep(economy, armies, { income = 0, turn = 1 } = {}) {
 
   if (!salaryTurn) {
     return {
-      economy: { ...economy, gold },
-      report: { salaryTurn, income, salaryDue: 0, salaryPaid: 0, unpaid: [], unpaidUnits: 0 },
+      economy: { gold, debt },
+      report: { salaryTurn, income, salaryDue: 0, salaryPaid: 0, unpaid: [], unpaidUnits: 0, debtAdded: 0, debtRepaid: 0, debt },
     };
   }
 
@@ -198,7 +225,7 @@ export function payUpkeep(economy, armies, { income = 0, turn = 1 } = {}) {
   const unpaid = [];
   for (const e of byDesertion.slice().reverse()) {
     if (stopped) {
-      unpaid.push({ armyId: e.armyId, stackId: e.stackId, typeId: e.typeId, units: e.count });
+      unpaid.push({ armyId: e.armyId, stackId: e.stackId, typeId: e.typeId, units: e.count, salary: e.salary });
       continue;
     }
     if (e.salary === 0) continue;
@@ -206,81 +233,128 @@ export function payUpkeep(economy, armies, { income = 0, turn = 1 } = {}) {
     gold -= payable * e.salary;
     paid += payable * e.salary;
     if (payable < e.count) {
-      unpaid.push({ armyId: e.armyId, stackId: e.stackId, typeId: e.typeId, units: e.count - payable });
+      unpaid.push({ armyId: e.armyId, stackId: e.stackId, typeId: e.typeId, units: e.count - payable, salary: e.salary });
       stopped = true;
     }
   }
   // Back to desertion order (most expensive first).
   unpaid.sort((x, y) => compareForDesertion({ typeId: x.typeId, id: x.stackId }, { typeId: y.typeId, id: y.stackId }));
 
+  const debtAdded = unpaid.reduce((n, u) => n + u.units * u.salary, 0);
+  debt += debtAdded;
+
+  // Optional automatic repayment from what is left.
+  let debtRepaid = 0;
+  if (E.AUTO_REPAY_DEBT && unpaid.length === 0 && debt > 0) {
+    debtRepaid = Math.min(gold, debt);
+    gold -= debtRepaid;
+    debt -= debtRepaid;
+  }
+
   return {
-    economy: { ...economy, gold },
+    economy: { gold, debt },
     report: {
       salaryTurn,
       income,
       salaryDue,
       salaryPaid: paid,
-      unpaid,
+      unpaid: unpaid.map(({ salary, ...u }) => u),
       unpaidUnits: unpaid.reduce((n, u) => n + u.units, 0),
+      debtAdded,
+      debtRepaid,
+      debt,
     },
   };
 }
 
-// What would happen next turn, for a warning in the UI. Same numbers as
-// payUpkeep plus the expected number of deserters (a fraction is a chance).
+// How likely desertion is this turn, per-mille (300 = 30%), from the debt
+// compared with the payroll. It is the share of units expected to desert.
+export function desertionChancePerMille(debt, payroll) {
+  if (debt <= 0 || payroll <= 0) return 0;
+  const debtTurnsX1000 = Math.floor((debt * 1000) / payroll);
+  return Math.min(E.DESERTION_MAX_PER_MILLE, Math.floor((debtTurnsX1000 * E.DESERTION_PER_MILLE_PER_TURN_OF_DEBT) / 1000));
+}
+
+// What would happen this turn, for a warning in the UI. Same numbers as
+// payUpkeep plus the desertion chance and the expected number of deserters
+// (a fraction is a chance of one more).
 export function previewUpkeep(economy, armies, options = {}) {
-  const { report } = payUpkeep(economy, armies, options);
-  return { ...report, expectedDeserters: (report.unpaidUnits * E.DESERTION_CHANCE_PER_MILLE) / 1000 };
+  const paid = payUpkeep(economy, armies, options);
+  const units = armies.reduce((n, a) => n + a.stacks.reduce((m, s) => m + s.count, 0), 0);
+  const chancePerMille = desertionChancePerMille(paid.economy.debt, totalSalary(armies));
+  return { ...paid.report, chancePerMille, expectedDeserters: (units * chancePerMille) / 1000 };
 }
 
 // ---------------------------------------------------------------
 // Desertion
 // ---------------------------------------------------------------
 
-// Removes deserters from the unpaid units.
-//   unpaid   report.unpaid from payUpkeep
-//   rng      a stream already forked for this player and turn
-// Returns { armies, deserters, count }; deserters is
-//   [{ armyId, stackId, typeId, count }] in the order they left.
-export function applyDesertion(armies, unpaid, rng) {
-  const total = unpaid.reduce((n, u) => n + u.units, 0);
-  if (total === 0) return { armies, deserters: [], count: 0 };
+// Removes deserters while there is debt.
+//   economy   gold and debt (after payUpkeep)
+//   rng       a stream already forked for this player and turn
+// Returns { economy, armies, deserters, count, chancePerMille, debtForgiven };
+// deserters is [{ armyId, stackId, typeId, count }] in the order they left.
+export function applyDesertion(economy, armies, rng) {
+  const stacks = [];
+  for (const a of armies) for (const s of a.stacks) stacks.push({ armyId: a.id, stackId: s.id, typeId: s.typeId, units: s.count });
+  stacks.sort((x, y) => compareForDesertion({ typeId: x.typeId, id: x.stackId }, { typeId: y.typeId, id: y.stackId }));
+  const total = stacks.reduce((n, s) => n + s.units, 0);
 
-  const expected = total * E.DESERTION_CHANCE_PER_MILLE; // per-mille units
+  const chance = desertionChancePerMille(economy.debt, totalSalary(armies));
+  const none = { economy, armies, deserters: [], count: 0, chancePerMille: chance, debtForgiven: 0 };
+  if (chance === 0 || total === 0) return none;
+
+  const expected = total * chance; // in per-mille units
   const whole = Math.floor(expected / 1000);
   const remainder = expected % 1000;
-  // One draw every time there are unpaid units, so call order never varies.
+  // One draw every time units are at risk, so call order never varies.
   const extra = rng.nextInt(0, 999) < remainder ? 1 : 0;
   let left = Math.min(total, whole + extra);
 
   let result = armies;
   const deserters = [];
-  for (const u of unpaid) {
+  for (const u of stacks) {
     if (left === 0) break;
     const army = result.find((a) => a.id === u.armyId);
     if (!army) continue;
-    const take = Math.min(left, u.units);
-    const res = removeUnits(army, u.stackId, take);
+    const res = removeUnits(army, u.stackId, Math.min(left, u.units));
     if (!res.ok) continue;
     result = replaceArmy(result, res.army);
     deserters.push({ armyId: u.armyId, stackId: u.stackId, typeId: u.typeId, count: res.removed });
     left -= res.removed;
   }
-  return { armies: result, deserters, count: deserters.reduce((n, d) => n + d.count, 0) };
+  const count = deserters.reduce((n, d) => n + d.count, 0);
+  const debtForgiven = E.FORGIVE_DEBT_OF_DESERTERS ? Math.floor((economy.debt * count) / total) : 0;
+  return {
+    economy: { ...economy, debt: economy.debt - debtForgiven },
+    armies: result,
+    deserters,
+    count,
+    chancePerMille: chance,
+    debtForgiven,
+  };
 }
 
-// Income, salaries and desertion in one call, for turnResolver.js.
+// Income, salaries, debt and desertion in one call, for turnResolver.js.
 //   rng   the economy stream (createMatchStreams(...).economy); it is
 //         forked by owner and turn, so players can be processed in any order
-// Returns { economy, armies, report } where report also has `deserters`.
+// Returns { economy, armies, report }; the report also has `deserters`,
+// `deserterCount`, `chancePerMille` and `debtForgiven`.
 export function runUpkeep(economy, armies, { income = 0, turn, ownerId, rng }) {
   const paid = payUpkeep(economy, armies, { income, turn });
   const stream = rng.fork(`upkeep:${ownerId}:${turn}`);
-  const out = applyDesertion(armies, paid.report.unpaid, stream);
+  const out = applyDesertion(paid.economy, armies, stream);
   return {
-    economy: paid.economy,
+    economy: out.economy,
     armies: out.armies,
-    report: { ...paid.report, deserters: out.deserters, deserterCount: out.count },
+    report: {
+      ...paid.report,
+      debt: out.economy.debt,
+      deserters: out.deserters,
+      deserterCount: out.count,
+      chancePerMille: out.chancePerMille,
+      debtForgiven: out.debtForgiven,
+    },
   };
 }
 
@@ -337,9 +411,10 @@ export function economySelfTest(createRng) {
 
   // Gold basics
   eq(createEconomy().gold, E.START_GOLD, "start gold");
+  eq(createEconomy().debt, 0, "no starting debt");
   eq(spendGold(createEconomy(100), 30).economy.gold, 70, "spend");
   eq(spendGold(createEconomy(10), 30).code, "not_enough_gold", "cannot overspend");
-  eq(deserializeEconomy({ gold: "abc" }).gold, E.START_GOLD, "bad saved gold");
+  eq(deserializeEconomy({ gold: "abc", debt: -5 }), { gold: E.START_GOLD, debt: 0 }, "bad saved values");
 
   // Salaries covered: swordsman 6 x2 + archer 2 x3 = 18
   const army = mk("A", [
@@ -348,46 +423,76 @@ export function economySelfTest(createRng) {
   ]);
   eq(totalSalary([army]), 18, "total salary");
   let up = payUpkeep(createEconomy(100), [army], { income: 5, turn: 1 });
-  eq(up.economy.gold, 100 + 5 - 18, "income then salaries");
+  eq(up.economy, { gold: 87, debt: 0 }, "income then salaries");
   eq(up.report.unpaid, [], "everyone paid");
 
-  // Not enough gold: cheapest are paid first, the expensive archers are not
+  // Not enough gold: cheapest are paid first, the unpaid salary becomes debt
   up = payUpkeep(createEconomy(10), [army], { turn: 1 });
-  eq(up.economy.gold, 0, "all gold spent");
+  eq(up.economy, { gold: 0, debt: 8 }, "gold spent, unpaid salary is debt");
   eq(up.report.salaryPaid, 10, "paid 5 swordsmen");
   eq(up.report.unpaid, [
     { armyId: "A", stackId: "a1", typeId: "archer", units: 2 },
     { armyId: "A", stackId: "s1", typeId: "swordsman", units: 1 },
   ], "unpaid in desertion order");
-  eq(previewUpkeep(createEconomy(10), [army], { turn: 1 }).expectedDeserters, 3 * 250 / 1000, "expected deserters");
+  eq(up.report.debtAdded, 8, "debt added = 2 archers x3 + 1 swordsman x2");
 
-  // Desertion is gradual and prefers expensive units
+  // Debt chance grows with the debt
+  eq(desertionChancePerMille(0, 18), 0, "no debt, no desertion");
+  eq(desertionChancePerMille(18, 18), 100, "one turn of salary owed = 10%");
+  eq(desertionChancePerMille(54, 18), 300, "three turns owed = 30%");
+  eq(desertionChancePerMille(10000, 18), E.DESERTION_MAX_PER_MILLE, "capped");
+  eq(desertionChancePerMille(8, 18) < desertionChancePerMille(9, 18), true, "more debt, more chance");
+  const pv = previewUpkeep(createEconomy(10), [army], { turn: 1 });
+  eq([pv.chancePerMille, pv.expectedDeserters], [44, 8 * 44 / 1000], "preview shows chance and expected deserters");
+
+  // Repaying debt
+  eq(repayDebt({ gold: 100, debt: 30 }, 20).economy, { gold: 80, debt: 10 }, "partial repayment");
+  eq(repayDebt({ gold: 100, debt: 30 }).economy, { gold: 70, debt: 0 }, "repay everything");
+  eq(repayDebt({ gold: 5, debt: 30 }).economy, { gold: 0, debt: 25 }, "repay what you can");
+  eq(repayDebt({ gold: 100, debt: 0 }).code, "no_debt", "nothing to repay");
+  eq(repayDebt({ gold: 0, debt: 30 }).code, "not_enough_gold", "no gold");
+
+  // Desertion is gradual, prefers expensive units and takes debt with it
   const big = mk("A", [
     { id: "s1", typeId: "swordsman", count: 32 },
     { id: "a1", typeId: "archer", count: 8 },
   ]);
-  const poor = createEconomy(0);
-  const paid = payUpkeep(poor, [big], { turn: 1 });
-  eq(paid.report.unpaidUnits, 40, "everyone unpaid");
-  const gone = applyDesertion([big], paid.report.unpaid, createRng("d1"));
-  eq(gone.count, 10, "40 x 25% = 10 deserters");
-  eq(gone.deserters.map((d) => [d.typeId, d.count]), [["archer", 8], ["swordsman", 2]], "most expensive leave first");
-  eq(gone.armies[0].stacks.map((s) => [s.id, s.count]), [["s1", 30]], "empty stack disappears");
+  const t1 = payUpkeep(createEconomy(0), [big], { turn: 1 });
+  eq(t1.economy, { gold: 0, debt: 88 }, "a whole turn of salary owed");
+  const d1 = applyDesertion(t1.economy, [big], createRng("d1"));
+  eq(d1.chancePerMille, 100, "10% after one unpaid turn");
+  eq(d1.count, 4, "40 units x 10% = 4 deserters");
+  eq(d1.deserters.map((d) => [d.typeId, d.count]), [["archer", 4]], "most expensive leave first");
+  eq([d1.debtForgiven, d1.economy.debt], [8, 80], "deserters take their share of the debt");
+  eq(d1.armies[0].stacks.map((s) => [s.id, s.count]), [["s1", 32], ["a1", 4]], "stacks after desertion");
 
-  // A small unpaid group: deserters are 0 or 1 (a fraction is a chance)
+  // Second unpaid turn: more debt, more desertion
+  const t2 = payUpkeep(d1.economy, d1.armies, { turn: 2 });
+  eq(t2.economy.debt, 80 + 76, "debt grows");
+  const d2 = applyDesertion(t2.economy, d1.armies, createRng("d2"));
+  eq(d2.chancePerMille > d1.chancePerMille, true, "higher chance with more debt");
+  eq(d2.count === 7 || d2.count === 8, true, "36 units x 20.5% = 7 or 8");
+  eq(d2.deserters[0].typeId, "archer", "archers leave first");
+
+  // Paid units are still at risk while there is debt
+  const rich = runUpkeep({ gold: 1000, debt: 88 }, [big], { income: 0, turn: 1, ownerId: "p1", rng: createRng("rich") });
+  eq(rich.economy.gold, 1000 - 88, "salaries still paid");
+  eq(rich.report.deserterCount, 4, "but troops still desert while in debt");
+  eq(rich.economy.debt, 80, "debt reduced by the deserters' share");
+  eq(runUpkeep({ gold: 1000, debt: 0 }, [big], { income: 0, turn: 1, ownerId: "p1", rng: createRng("rich") }).report.deserterCount, 0, "no debt, nobody leaves");
+
+  // A small chance gives 0 or 1 deserters
   const counts = new Set();
-  for (let i = 0; i < 30; i++) counts.add(applyDesertion([army], up.report.unpaid, createRng("s" + i)).count);
+  for (let i = 0; i < 30; i++) counts.add(applyDesertion(up.economy, [army], createRng("s" + i)).count);
   eq([...counts].sort(), [0, 1], "fractional chance gives 0 or 1");
-  eq(applyDesertion([army], [], createRng(1)).count, 0, "nothing unpaid, nobody leaves");
 
-  // Full turn, deterministic and independent of player order
+  // Deterministic and independent of player order
   const streams = createRng("eco");
+  const poor = createEconomy(0);
   const a = runUpkeep(poor, [big], { income: 0, turn: 3, ownerId: "p1", rng: streams });
-  const b = runUpkeep(poor, [big], { income: 0, turn: 3, ownerId: "p1", rng: createRng("eco") });
-  eq(a, b, "same seed, same turn");
+  eq(runUpkeep(poor, [big], { income: 0, turn: 3, ownerId: "p1", rng: createRng("eco") }), a, "same seed, same turn");
   runUpkeep(poor, [big], { income: 0, turn: 3, ownerId: "p2", rng: streams }); // another player first
   eq(runUpkeep(poor, [big], { income: 0, turn: 3, ownerId: "p1", rng: streams }), a, "player order does not matter");
-  eq(a.report.deserterCount, 10, "report has deserters");
 
   // Hiring
   const nextId = createIdCounter("h");
@@ -422,6 +527,8 @@ export default {
   addGold,
   spendGold,
   deserializeEconomy,
+  repayDebt,
+  desertionChancePerMille,
   hireUnits,
   maxHireable,
   isSalaryTurn,
