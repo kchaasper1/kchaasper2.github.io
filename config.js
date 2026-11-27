@@ -397,12 +397,52 @@ export const CONFIG = deepFreeze({
   MAP_GENERATION: {
     WIDTH_TILES: 48,
     HEIGHT_TILES: 48,
+    // Open fields only for now: no blocked terrain, so every point is
+    // reachable. (Kept as a flag for when terrain is added.)
+    REQUIRE_CONNECTED: true,
+
+    // Where players start.
+    //   "ring":      players are spaced evenly around a square ring, with a
+    //                random turn of the ring. With 2 players (or 4 on a
+    //                square map) the whole map is mirrored by rotation, so
+    //                every player gets the same villages the same distance
+    //                away: fair.
+    //   "irregular": players start at random spots at least
+    //                MIN_START_DISTANCE apart. Not mirrored, so luck matters.
+    LAYOUT: "ring",
     // Minimum distance between player start points (tiles).
     MIN_START_DISTANCE: 24,
-    // Guarantee every village and start is reachable.
-    REQUIRE_CONNECTED: true,
-    // Enemies placed at the start of a World Battle vs AI map.
+    // The ring runs this many tiles in from the map edge.
+    RING_INSET: 6,
+    // Irregular starts stay this far from the map edge (tiles).
+    START_MARGIN: 6,
+
+    // Villages (counts are in CONFIG.VILLAGES: PER_PLAYER_START and
+    // NEUTRAL_VILLAGES). Distances are in tiles.
+    VILLAGE_MARGIN: 2,
+    VILLAGE_MIN_SPACING: 5,
+    START_VILLAGE_MIN_DISTANCE: 3,
+    START_VILLAGE_MAX_DISTANCE: 6,
+    NEUTRAL_MIN_DISTANCE_FROM_START: 7,
+
+    // Enemy armies for World Battle vs AI (they all belong to one AI owner).
     START_ENEMY_ARMIES: 3,
+    ENEMY_OWNER_ID: "ai",
+    //   "random":        anywhere away from the players
+    //   "near_villages": 2 to 3 tiles from a neutral village
+    //   "mixed":         alternates between the two
+    ENEMY_PLACEMENT: "mixed",
+    ENEMY_MIN_DISTANCE_FROM_START: 10,
+    ENEMY_MIN_SPACING: 4,
+    ENEMY_NEAR_VILLAGE_MIN: 2,
+    ENEMY_NEAR_VILLAGE_MAX: 3,
+    // Each enemy army has this many stacks, each this many units, made from
+    // the same unit types the player starts with (default-unlocked,
+    // hireable ones).
+    ENEMY_STACKS_MIN: 1,
+    ENEMY_STACKS_MAX: 2,
+    ENEMY_STACK_COUNT_MIN: 3,
+    ENEMY_STACK_COUNT_MAX: 6,
   },
 
   // ---------------------------------------------------------------
