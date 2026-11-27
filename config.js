@@ -237,10 +237,22 @@ export const CONFIG = deepFreeze({
     // Salaries are paid once per world turn.
     SALARY_PERIOD_TURNS: 1,
     // Insolvency: when gold cannot cover the salaries, the cheapest units are
-    // paid first and the rest go unpaid. Every world turn, unpaid units
-    // desert gradually: expected deserters = unpaid units x this chance
-    // (per-mille, 250 = 25%). The most expensive units desert first.
-    DESERTION_CHANCE_PER_MILLE: 250,
+    // paid first and the rest go unpaid. Their unpaid salary becomes DEBT
+    // (back pay owed to the troops). The more debt compared with the army's
+    // payroll, the more likely units are to desert each world turn:
+    //   chance = (debt / payroll per turn) x PER_MILLE_PER_TURN_OF_DEBT,
+    // capped at MAX_PER_MILLE. So a debt of 3 turns of salary with 100 gives
+    // 30% (300 per-mille). Expected deserters = units x chance. ALL units
+    // are at risk while there is debt, paid or not, and the most expensive
+    // desert first.
+    DESERTION_PER_MILLE_PER_TURN_OF_DEBT: 100,
+    DESERTION_MAX_PER_MILLE: 600,
+    // Deserters take their share of the debt with them (it is forgiven), so
+    // losing troops does not push the remaining troops into a spiral.
+    FORGIVE_DEBT_OF_DESERTERS: true,
+    // Spend leftover gold on debt automatically once all salaries are paid.
+    // Off: the player repays when they choose (economy.repayDebt).
+    AUTO_REPAY_DEBT: false,
     DESERTION_ORDER: ["hire_cost_desc", "type_id_asc", "unit_id_asc"],
     // Gold from winning a battle. Off for now: the loot function exists
     // (economy.calculateLoot) but returns 0 until you enable and tune this.
@@ -259,15 +271,21 @@ export const CONFIG = deepFreeze({
   // Villages and patrons
   // ---------------------------------------------------------------
   VILLAGES: {
-    // Gold the owner earns per world turn while the village is safe.
+    // Gold a new village pays per world turn while it is safe.
     INCOME_PER_TURN: 5,
+    // Every village's income grows by this percent each day (compounding),
+    // whether or not anyone controls it. Monster raids cut it back.
+    INCOME_GROWTH_PERCENT_PER_DAY: 1,
     // Units can be hired at an owned village.
     CAN_HIRE: true,
-    // A village is "disturbed" (no income) while a hostile army or monster
-    // is within this range (tiles) or it was attacked within this many turns.
+    // A village is "disturbed" while any army that is not its owner's, or any
+    // monster, is within this range (in TILES). While disturbed its income
+    // is FROZEN: it keeps piling up in the village but cannot be collected.
+    // When the threat is gone, everything saved up is collected at once.
     DISTURB_RANGE: 6,
-    RECENT_ATTACK_TURNS: 2,
-    // Capture: stand on or within CAPTURE_RANGE until the end of a turn.
+    // Capture: stand on or within CAPTURE_RANGE (in TILES) of the village
+    // until the end of a turn. The number of units does not matter. This is
+    // also how close an army must be to hire there.
     CAPTURE_RANGE: 2,
     // If two opposing armies are in reach, they fight. The loser is pushed
     // back to the nearest point outside reach.
@@ -286,17 +304,36 @@ export const CONFIG = deepFreeze({
     // Spawn chance per world turn, in per-mille (1000 = always).
     SPAWN_CHANCE_PER_MILLE: 120,
     MAX_ACTIVE: 4,
-    // Monsters may attack villages and disturb them nearby.
-    ATTACKS_VILLAGES: true,
-    // Monster is a neutral thing: reaching it stops movement.
-    ROAM_RADIUS: 8,
-    // Placeholder monster type ids (data lives in unitTypes.js).
+    // Placeholder monster type ids (data lives in unitTypes.js). A new
+    // monster picks one at random.
     TYPES: ["wolf_pack"],
-  },
+    // Units in a freshly spawned monster group (inclusive).
+    SPAWN_COUNT_MIN: 4,
+    SPAWN_COUNT_MAX: 10,
+    // Monsters never spawn closer than this to an army (in TILES), nor
+    // closer than 3 tiles to a village or another monster.
+    MIN_SPAWN_DISTANCE_FROM_ARMIES: 8,
+    // Formation monsters fight in.
+    FORMATION: "line",
 
-  // ---------------------------------------------------------------
-  // World turns and multiplayer
-  // ---------------------------------------------------------------
+    // Wandering: each monster roams within ROAM_RADIUS tiles of where it
+    // spawned, walking up to MOVE_PER_TURN tiles per turn toward a random
+    // target, and picking a new target when it arrives or by chance.
+    ROAM_RADIUS: 8,
+    MOVE_PER_TURN: 3,
+    NEW_TARGET_CHANCE_PER_MILLE: 150,
+
+    // Villages: a monster that senses a village within this range (tiles)
+    // heads for it instead of wandering. Within RAID_RANGE tiles it raids
+    // with this chance each turn. A raid cuts the village's income by a
+    // random percent from MIN to MAX, inclusive.
+    ATTACKS_VILLAGES: true,
+    VILLAGE_SENSE_RANGE: 6,
+    RAID_RANGE: 2,
+    RAID_CHANCE_PER_MILLE: 300,
+    RAID_CUT_MIN_PERCENT: 10,
+    RAID_CUT_MAX_PERCENT: 50,
+  },
   TURNS: {
     // All players move at the same time.
     SIMULTANEOUS: true,
@@ -313,6 +350,8 @@ export const CONFIG = deepFreeze({
       "monster_spawns",
       "xp_awards",
     ],
+    // How many world turns make one "day" (village income grows daily).
+    TURNS_PER_DAY: 1,
     // Seconds before an unsubmitted turn is auto-submitted (0 = no timer).
     TURN_TIMER_SECONDS: 90,
     // Battle turn timer for the grid (seconds).
