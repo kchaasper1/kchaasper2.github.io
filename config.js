@@ -381,6 +381,28 @@ export const CONFIG = deepFreeze({
   },
 
   // ---------------------------------------------------------------
+  // Overworld AI (overworldAI.js): enemy armies and AI players
+  // ---------------------------------------------------------------
+  OVERWORLD_AI: {
+    // An army chases an enemy army it sees within this range (in TILES) when
+    // its strength is at least ATTACK_STRENGTH_PERCENT of the enemy's.
+    AGGRESSION_RANGE: 12,
+    ATTACK_STRENGTH_PERCENT: 80,
+    // An army runs from a stronger one within FLEE_RANGE tiles when its own
+    // strength is below FLEE_STRENGTH_PERCENT of the enemy's.
+    FLEE_RANGE: 8,
+    FLEE_STRENGTH_PERCENT: 50,
+    // With nothing to do an army wanders within this many tiles.
+    ROAM_RADIUS: 6,
+    // Armies with this many units or fewer (new recruits) join a bigger army.
+    SMALL_ARMY_UNITS: 3,
+    // AI players with villages hire while they keep this many turns of
+    // salary in reserve, up to HIRE_BATCH units at a time, never in debt.
+    HIRE_RESERVE_TURNS: 3,
+    HIRE_BATCH: 3,
+  },
+
+  // ---------------------------------------------------------------
   // Game modes
   // ---------------------------------------------------------------
   MODES: {
