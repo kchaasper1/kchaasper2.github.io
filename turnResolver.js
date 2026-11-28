@@ -71,9 +71,11 @@
 //
 // EMPTY ARMIES vanish at once, from the army list and the world.
 //
-// VICTORY: an owner is eliminated when it has no armies and no villages
-// (it could still hire while it holds a village). The game ends when one
-// owner is left standing, or none. Monsters never count.
+// VICTORY: a player is eliminated when it has no armies and no villages (it
+// could still hire while it holds a village). The enemy raiders of World
+// Battle vs AI have no economy and cannot hire, so they are eliminated as
+// soon as they have no armies, even if they hold villages. The game ends
+// when one owner is left standing, or none. Monsters never count.
 //
 // BATTLE RECORDS (for replays and spectators)
 //   { id, kind, meta, initial, state, actions, awards, rngState, done, result }
@@ -585,7 +587,9 @@ function runMonsterStage(g) {
 
 function evaluateVictory(g) {
   const owners = g.players.map((p) => p.ownerId).concat(g.enemyOwnerId ? [g.enemyOwnerId] : []);
-  const alive = owners.filter((o) => g.armies.some((a) => a.ownerId === o) || g.villages.some((v) => v.ownerId === o));
+  const alive = owners.filter(
+    (o) => g.armies.some((a) => a.ownerId === o) || (g.economies[o] && g.villages.some((v) => v.ownerId === o))
+  );
   g.eliminated = owners.filter((o) => !alive.includes(o));
   if ((owners.length >= 2 && alive.length <= 1) || alive.length === 0) {
     g.over = true;
