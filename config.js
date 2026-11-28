@@ -403,6 +403,34 @@ export const CONFIG = deepFreeze({
   },
 
   // ---------------------------------------------------------------
+  // Spectating battles (battleViewer.js)
+  // ---------------------------------------------------------------
+  OBSERVERS: {
+    // Who may watch a battle in a popup (they can never interact):
+    //   "everyone"        every player, including the fighters
+    //   "not_involved"    only players who are not in that battle
+    //   "eliminated_only" only players who have been eliminated
+    //   "none"            nobody
+    // Watching an enemy battle shows you their army, so tighten this if it
+    // gives too much away.
+    WHO_CAN_WATCH: "everyone",
+    // Spectators see the battle this many actions behind the live one.
+    DELAY_ACTIONS: 0,
+    // How long each action is shown when catching up, in milliseconds.
+    STEP_MS: 700,
+    // Popups open at once; opening more minimizes the oldest.
+    MAX_OPEN_WINDOWS: 4,
+    // Popup size in pixels (shrinks to fit small screens), and the height
+    // of the strip where minimized battles wait.
+    WINDOW_WIDTH: 340,
+    WINDOW_HEIGHT: 290,
+    TRAY_HEIGHT: 36,
+    // Keep last turn's battles watchable (as replays) until the next turn
+    // resolves.
+    KEEP_LAST_TURN: true,
+  },
+
+  // ---------------------------------------------------------------
   // Game modes
   // ---------------------------------------------------------------
   MODES: {
