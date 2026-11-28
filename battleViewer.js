@@ -161,6 +161,8 @@ export function createBattleFeed({ seed, record, delayActions = O.DELAY_ACTIONS,
         index++;
         out.push(shown(index));
       }
+      // Caught up: leftover time must not carry over to future actions.
+      if (index >= target()) acc = 0;
       return out;
     },
     pause() {
@@ -258,7 +260,8 @@ export function rectsOverlap(a, b) {
 }
 
 // A place for a new window near `anchor` (screen pixels): above the anchor
-// so the battle stays visible, else below, right, left, else a cascade.
+// so the battle stays visible, else below, right or left, else the free spot
+// nearest the anchor, else (a small screen) a cascade that overlaps.
 function findSpot(vs, size, anchor) {
   const open = vs.windows.filter((w) => w.mode === "open").map((w) => w.rect);
   const gap = 24;
@@ -272,11 +275,22 @@ function findSpot(vs, size, anchor) {
     const r = clampRect({ ...t, w: size.w, h: size.h }, vs);
     if (!open.some((o) => rectsOverlap(o, r))) return r;
   }
-  for (let k = 1; k <= 12; k++) {
-    const r = clampRect({ x: tries[0].x + 28 * k, y: tries[0].y + 28 * k, w: size.w, h: size.h }, vs);
-    if (!open.some((o) => rectsOverlap(o, r))) return r;
+  // Otherwise scan the screen for a free spot, closest to the anchor.
+  const maxX = Math.max(MARGIN, vs.width - size.w - MARGIN);
+  const maxY = Math.max(MARGIN, vs.height - O.TRAY_HEIGHT - size.h - MARGIN);
+  let best = null;
+  for (let y = MARGIN; y <= maxY; y += 16) {
+    for (let x = MARGIN; x <= maxX; x += 16) {
+      const r = { x, y, w: size.w, h: size.h };
+      if (open.some((o) => rectsOverlap(o, r))) continue;
+      const d = (x + size.w / 2 - anchor.x) ** 2 + (y + size.h / 2 - anchor.y) ** 2;
+      if (best === null || d < best.d) best = { d, r };
+    }
   }
-  return clampRect({ ...tries[0], w: size.w, h: size.h }, vs);
+  if (best) return best.r;
+  // No free spot (the screen is too small for this many): cascade, accepting overlap.
+  const k = open.length;
+  return clampRect({ x: tries[0].x + 28 * k, y: tries[0].y + 28 * k, w: size.w, h: size.h }, vs);
 }
 
 function withWindows(vs, windows, extra = {}) {
@@ -884,18 +898,23 @@ export function battleViewerSelfTest() {
   eq(battleWorldPosition({ world: { armies: [] }, monsters: [] }, full), null, "no position when both are gone");
 
   // --- Window manager ---
-  let vs = createViewerState({ width: 960, height: 560 });
-  vs = openBattle(vs, "b1", { x: 480, y: 300 });
+  let vs = createViewerState({ width: 1400, height: 700 });
+  vs = openBattle(vs, "b1", { x: 700, y: 360 });
   const w1 = vs.windows[0];
   eq([w1.mode, w1.rect.w, w1.rect.h], ["open", O.WINDOW_WIDTH, O.WINDOW_HEIGHT], "a window opens at full size");
-  eq(w1.rect.y + w1.rect.h <= 300, true, "above the battle, so the armies stay visible");
+  eq(w1.rect.y + w1.rect.h <= 360, true, "above the battle, so the armies stay visible");
   const inside = (r) => r.x >= 0 && r.y >= 0 && r.x + r.w <= vs.width && r.y + r.h <= vs.height - O.TRAY_HEIGHT;
   eq(inside(w1.rect), true, "inside the container");
-  vs = openBattle(vs, "b2", { x: 480, y: 300 });
-  vs = openBattle(vs, "b3", { x: 480, y: 300 });
+  vs = openBattle(vs, "b2", { x: 700, y: 360 });
+  vs = openBattle(vs, "b3", { x: 700, y: 360 });
   const open3 = getOpenWindows(vs);
   eq(open3.every((w, i) => open3.every((v, j) => j <= i || !rectsOverlap(w.rect, v.rect))), true, "popups avoid each other");
   eq(open3.every((w) => inside(w.rect)), true, "all inside the container");
+  // A crowded small screen still opens every window, inside the screen
+  let crowded = createViewerState({ width: 960, height: 560 });
+  for (const id of ["c1", "c2", "c3"]) crowded = openBattle(crowded, id, { x: 480, y: 300 });
+  eq(getOpenWindows(crowded).length, 3, "all three open even when they must overlap");
+  eq(getOpenWindows(crowded).every((w) => w.rect.x >= 0 && w.rect.x + w.rect.w <= 960 && w.rect.y + w.rect.h <= 560 - O.TRAY_HEIGHT), true, "and stay inside");
   // Edge anchors are clamped
   const edge = openBattle(createViewerState({ width: 960, height: 560 }), "e", { x: 0, y: 0 });
   eq([edge.windows[0].rect.x >= 0, edge.windows[0].rect.y >= 0], [true, true], "anchor at the corner stays on screen");
