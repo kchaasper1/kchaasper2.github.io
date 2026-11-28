@@ -101,7 +101,25 @@ const BADGE_MARGIN = 14; // room above the top row for the unit-count numbers
 
 // Splits the canvas into the grid area and the panel.
 // Wide canvases: panel on the right. Narrow canvases: compact panel below.
-export function computeLayout(canvasW, canvasH, gridW, gridH) {
+export function computeLayout(canvasW, canvasH, gridW, gridH, compact = false) {
+  if (compact) {
+    // Grid only: no panel. Used by spectator popups (battleViewer.js).
+    const pad = 6;
+    const availW = canvasW - 2 * pad;
+    const availH = canvasH - 2 * pad - 12;
+    const cell = Math.max(8, Math.floor(Math.min(availW / gridW, availH / gridH)));
+    return {
+      mode: "compact",
+      cell,
+      gridX: pad + Math.floor((availW - cell * gridW) / 2),
+      gridY: pad + 12 + Math.floor((availH - cell * gridH) / 2),
+      gridW,
+      gridH,
+      panel: { x: 0, y: 0, w: 0, h: 0 },
+      width: canvasW,
+      height: canvasH,
+    };
+  }
   const wide = canvasW >= 720 && canvasW >= canvasH * 1.05;
   let panel;
   let areaW;
@@ -280,14 +298,14 @@ export function buildViewModel({
 
   // Buttons
   const showFacing = !!active && !state.over && active.formation.type === "line";
-  const panelRects = layoutPanel(layout, showFacing && canAct);
+  const panelRects = layout.mode === "compact" ? null : layoutPanel(layout, showFacing && canAct);
   const buttons = [];
   const currentFacing = active ? active.formation.facing : "N";
   const chosen = pendingFacing || currentFacing;
 
   const endAction = { type: "end" };
   if (active && active.formation.type === "line" && chosen !== currentFacing) endAction.facing = chosen;
-  buttons.push({
+  if (panelRects) buttons.push({
     id: "end",
     label: "End activation",
     rect: panelRects.buttons.end,
@@ -297,7 +315,7 @@ export function buildViewModel({
   });
 
   const otherFormation = active && active.formation.type === "square" ? "line" : "square";
-  buttons.push({
+  if (panelRects) buttons.push({
     id: "switch",
     label: active ? `Switch to ${otherFormation}` : "Switch formation",
     rect: panelRects.buttons.switch,
@@ -306,7 +324,7 @@ export function buildViewModel({
     result: { kind: "action", action: { type: "switch", formation: otherFormation } },
   });
 
-  if (panelRects.buttons.facing) {
+  if (panelRects && panelRects.buttons.facing) {
     for (const d of DIRS) {
       buttons.push({
         id: `face_${d}`,
@@ -665,6 +683,30 @@ function drawPanel(ctx, vm, state, logLines, names) {
   }
 }
 
+// Compact mode has no panel: show the turn on top and details of the
+// hovered unit along the bottom.
+function drawCompactInfo(ctx, vm, state, names) {
+  const L = vm.layout;
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "left";
+  ctx.font = font(11, "bold");
+  ctx.fillStyle = THEME.muted;
+  ctx.fillText(state.over ? "Finished" : `Turn ${state.turn}`, 8, 10);
+  const u = vm.hoverUnit;
+  if (!u) return;
+  const type = getUnitType(u.typeId);
+  const stats = statsAtLevel(u.typeId, u.level);
+  const n = u.formation.count;
+  const text = `${type.name} (${names[u.ownerId] || u.ownerId}) · ${n} units · HP ${totalHealth(u)}/${n * stats.health}${u.carry > 0 ? " · wounded" : ""}`;
+  ctx.font = font(11);
+  const w = Math.min(L.width - 12, ctx.measureText(text).width + 14);
+  roundRect(ctx, 6, L.height - 24, w, 18, 5);
+  ctx.fillStyle = "rgba(11,14,18,0.92)";
+  ctx.fill();
+  ctx.fillStyle = THEME.text;
+  ctx.fillText(fitText(ctx, text, w - 12), 12, L.height - 15);
+}
+
 function drawFloaters(ctx, layout, floaters) {
   for (const f of floaters) {
     const t = f.age / f.ttl;
@@ -687,7 +729,7 @@ function drawFloaters(ctx, layout, floaters) {
 // The UI object
 // ---------------------------------------------------------------
 
-export function createBattleUI({ canvas, state, localOwnerId = null, ownerNames = {}, onAction = () => {}, width, height, dpr = 1 }) {
+export function createBattleUI({ canvas, state, localOwnerId = null, ownerNames = {}, onAction = () => {}, width, height, dpr = 1, compact = false }) {
   const ctx = canvas.getContext("2d");
   let S = state;
   let local = localOwnerId;
@@ -714,7 +756,7 @@ export function createBattleUI({ canvas, state, localOwnerId = null, ownerNames 
       canvas.style.height = `${size.h}px`;
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    layout = computeLayout(size.w, size.h, S.width, S.height);
+    layout = computeLayout(size.w, size.h, S.width, S.height, compact);
   }
   applySize();
 
@@ -749,8 +791,8 @@ export function createBattleUI({ canvas, state, localOwnerId = null, ownerNames 
     for (const u of vm.units) drawCountBadge(ctx, vm, u);
     drawTargetLabel(ctx, vm, S);
     drawFloaters(ctx, layout, floaters);
-    // The panel needs full unit objects for details.
-    drawPanel(ctx, vmWithUnits(vm), S, logLines, names);
+    if (layout.mode === "compact") drawCompactInfo(ctx, vm, S, names);
+    else drawPanel(ctx, vmWithUnits(vm), S, logLines, names);
   }
 
   // drawPanel wants the full combatant for details, not the slim view unit.
@@ -888,7 +930,7 @@ export function createBattleUI({ canvas, state, localOwnerId = null, ownerNames 
       S = next;
       busy = false;
       colors = assignOwnerColors(S);
-      layout = computeLayout(size.w, size.h, S.width, S.height);
+      layout = computeLayout(size.w, size.h, S.width, S.height, compact);
       render();
     },
     showAttack,
@@ -966,6 +1008,10 @@ export function battleUISelfTest() {
   }
   eq(computeLayout(960, 560, 10, 8).mode, "side", "wide uses a side panel");
   eq(computeLayout(420, 700, 10, 8).mode, "bottom", "narrow uses a bottom panel");
+  const cl = computeLayout(340, 230, 10, 8, true);
+  eq([cl.mode, cl.panel.w, cl.cell >= 8], ["compact", 0, true], "compact layout has no panel");
+  eq(cl.gridX + cl.cell * 10 <= 340 && cl.gridY + cl.cell * 8 <= 230, true, "compact grid fits the popup");
+  eq(pixelToCell(cl, cl.gridX + 3, cl.gridY + 3), { x: 0, y: 0 }, "compact hit testing");
 
   // A battle: attacker p1 (swordsman square + spearman line) hits p2 from the south
   const a = mkArmy("A", "p1", "N", [
