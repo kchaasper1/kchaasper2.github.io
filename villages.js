@@ -306,6 +306,21 @@ export function canHireAt(world, villages, armyId, typeId) {
   return { ok: true, villageId: hiring[0].id };
 }
 
+// Can this owner hire at this village? No army needs to be there: the units
+// appear in a new army at the village (turnResolver.js). The village must be
+// held by the owner, be able to hire, and offer the unit type (if given).
+// Returns { ok: true, villageId } or { ok: false, code, reason }.
+export function canHireAtVillage(villages, ownerId, villageId, typeId) {
+  const village = getVillage(villages, villageId);
+  if (!village) return fail("unknown_village", "That village does not exist.");
+  if (village.ownerId !== ownerId) return fail("not_yours", "You do not hold that village.");
+  if (!village.canHire) return fail("village_cannot_hire", "Nobody can be hired at this village.");
+  if (typeId !== undefined && village.hireTypes !== null && !village.hireTypes.includes(typeId)) {
+    return fail("type_not_offered", "This village does not offer that unit.");
+  }
+  return { ok: true, villageId };
+}
+
 // ---------------------------------------------------------------
 // Saving and loading
 // ---------------------------------------------------------------
@@ -453,6 +468,14 @@ export function villagesSelfTest() {
   // Hiring still works while disturbed
   eq(canHireAt(withArmy(w, "foe", "p2", 14, 10), [owned("p1")], "A").ok, true, "disturbed villages can hire");
 
+  // Hiring at a village needs no army
+  eq(canHireAtVillage([owned("p1")], "p1", "v1", "swordsman"), { ok: true, villageId: "v1" }, "hire without an army");
+  eq(canHireAtVillage([owned("p1")], "p2", "v1").code, "not_yours", "someone else's village");
+  eq(canHireAtVillage([n], "p1", "v1").code, "not_yours", "neutral village");
+  eq(canHireAtVillage([owned("p1")], "p1", "zz").code, "unknown_village", "unknown village");
+  eq(canHireAtVillage([owned("p1", { canHire: false })], "p1", "v1").code, "village_cannot_hire", "cannot hire");
+  eq(canHireAtVillage([owned("p1", { hireTypes: ["spearman"] })], "p1", "v1", "swordsman").code, "type_not_offered", "type not offered");
+
   // Status for the UI
   const st = getVillageStatus(world(), owned("p1", { stored: 7 }));
   eq([st.frozen, st.nextCollection, st.incomePerTurn], [false, 7 + V.INCOME_PER_TURN, V.INCOME_PER_TURN], "status when safe");
@@ -481,6 +504,7 @@ export default {
   pushLoserOut,
   updateCaptures,
   canHireAt,
+  canHireAtVillage,
   deserializeVillages,
   villagesSelfTest,
 };
