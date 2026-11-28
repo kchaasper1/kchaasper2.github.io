@@ -505,6 +505,48 @@ export function autoLayout(army) {
 }
 
 // ---------------------------------------------------------------
+// Moving units between armies
+// ---------------------------------------------------------------
+
+// Moves a whole stack from one army to another. The stack keeps its id,
+// formation and wound. Where the two armies are, and whether they belong
+// to the same owner, is checked by the caller (turnResolver.js).
+// Returns { ok, army (the receiving army), from (the giving army) }.
+export function moveStack(fromArmy, toArmy, stackId) {
+  const stack = getStack(fromArmy, stackId);
+  if (!stack) return fail("unknown_stack", "That stack does not exist.");
+  if (fromArmy.id === toArmy.id) return fail("same_army", "Pick two different armies.");
+  if (toArmy.stacks.length >= MAX_STACKS_PER_ARMY) {
+    return fail("max_stacks", `An army holds at most ${MAX_STACKS_PER_ARMY} stacks.`);
+  }
+  const moved = { ...cloneStack(stack), cell: findFreeCell(toArmy.stacks, stack.typeId), switchingTo: null };
+  return ok(withStacks(toArmy, toArmy.stacks.map(cloneStack).concat([moved])), {
+    from: withStacks(fromArmy, fromArmy.stacks.filter((s) => s.id !== stackId).map(cloneStack)),
+  });
+}
+
+// Hands `count` units of a stack to another army (as a stack of their own).
+// With the whole count, the stack itself moves. With less, the units are
+// split off first (options.takeWounded sends the wounded unit with them).
+// The giving army may end up empty: the caller disbands it.
+// ctx needs nextId when a split is needed.
+// Returns { ok, army (receiving), from (giving) }.
+export function transferUnits(fromArmy, toArmy, stackId, count, ctx = {}, options = {}) {
+  const stack = getStack(fromArmy, stackId);
+  if (!stack) return fail("unknown_stack", "That stack does not exist.");
+  if (!Number.isInteger(count) || count < 1 || count > stack.count) {
+    return fail("bad_count", `Count must be a whole number from 1 to ${stack.count}.`);
+  }
+  if (count === stack.count) return moveStack(fromArmy, toArmy, stackId);
+  if (toArmy.stacks.length >= MAX_STACKS_PER_ARMY) {
+    return fail("max_stacks", `An army holds at most ${MAX_STACKS_PER_ARMY} stacks.`);
+  }
+  const split = splitStack(fromArmy, stackId, count, ctx, options);
+  if (!split.ok) return split;
+  return moveStack(split.army, toArmy, split.newStackId);
+}
+
+// ---------------------------------------------------------------
 // Wounds and battle results
 // ---------------------------------------------------------------
 
@@ -755,6 +797,21 @@ export function armySelfTest() {
   eq([takeW.army.stacks[0].carry, takeW.army.stacks[2].carry, takeW.army.stacks[2].count], [0, 5, 1], "split can take the wounded unit");
   eq(splitStack(healedB.army, "b", 1, { nextId }, { takeWounded: true }).code, "not_wounded", "nothing to take");
 
+  // Moving units between armies
+  const giver = createArmy({ id: "G", ownerId: "p1" });
+  const taker = createArmy({ id: "T", ownerId: "p1" });
+  const g1 = addStack(giver, { typeId: "swordsman", count: 6 }, { nextId: () => "gs", enforceLimits: false }).army;
+  const woundedGiver = { ...g1, stacks: g1.stacks.map((s) => ({ ...s, carry: 9 })) };
+  let tr = transferUnits(woundedGiver, taker, "gs", 6, { nextId });
+  eq([tr.from.stacks.length, tr.army.stacks.length, tr.army.stacks[0].id, tr.army.stacks[0].carry], [0, 1, "gs", 9], "whole stack moves with its wound");
+  tr = transferUnits(woundedGiver, taker, "gs", 2, { nextId });
+  eq([tr.from.stacks[0].count, tr.from.stacks[0].carry, tr.army.stacks[0].count, tr.army.stacks[0].carry], [4, 9, 2, 0], "part of a stack leaves the wound behind");
+  tr = transferUnits(woundedGiver, taker, "gs", 2, { nextId }, { takeWounded: true });
+  eq([tr.from.stacks[0].carry, tr.army.stacks[0].carry], [0, 9], "or takes the wounded unit along");
+  eq(transferUnits(g1, taker, "gs", 7, { nextId }).code, "bad_count", "cannot transfer more than the stack");
+  eq(moveStack(g1, g1, "gs").code, "same_army", "needs two armies");
+  eq(g1.stacks[0].count, 6, "inputs are not changed");
+
   // Loading sanitizes bad data
   const dirty = deserializeArmy({ id: "x", stacks: [{ id: "a", typeId: "swordsman", count: 3 }, { id: "b", typeId: "nope", count: 1 }] });
   eq(dirty.stacks.length, 1, "dirty drops bad stacks");
@@ -790,6 +847,8 @@ export default {
   isSwitching,
   hasPendingSwitch,
   resolveFormationSwitches,
+  moveStack,
+  transferUnits,
   healStack,
   healArmy,
   isWounded,
