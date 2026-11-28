@@ -142,6 +142,9 @@ export const CONFIG = deepFreeze({
     DEFAULT_MOVE_PER_TURN: 6, // in tiles
     // Contact happens when two armies come within this range (sub-tiles).
     CONTACT_RANGE: 20,
+    // Armies of the same owner can hand units to each other, or split into
+    // two armies, when they are within this range (in TILES).
+    TRANSFER_RANGE: 1,
     // Facing is chosen by the player at the end of the army's turn.
     FACING_CHOSEN_AT_TURN_END: true,
 
@@ -350,6 +353,9 @@ export const CONFIG = deepFreeze({
       "monster_spawns",
       "xp_awards",
     ],
+    // After battles, village contests can start new fights between armies
+    // that are still contesting a village. At most this many rounds.
+    MAX_CONTEST_ROUNDS: 3,
     // How many world turns make one "day" (village income grows daily).
     TURNS_PER_DAY: 1,
     // Seconds before an unsubmitted turn is auto-submitted (0 = no timer).
